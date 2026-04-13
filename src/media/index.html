@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <link rel="stylesheet" href="{{styleUri}}" />
+  </head>
+
+  <body>
+    <h2>Convert Extension</h2>
+
+    <section>
+      <label for="apiKey">API Key</label>
+      <input id="apiKey" placeholder="Enter API_Key:API_Secret" />
+      <button onclick="loadProjects()">Load Projects</button>
+    </section>
+
+
+    <div class="section">
+      <label for="accountId">Account ID</label>
+      <input id="accountId" placeholder="Enter Account ID" />
+    </div>
+
+    <div class="section">
+      <label>Projects</label>
+      <div id="projects" class="dropdown"></div>
+    </div>
+
+    <div class="section">
+      <label>Experiences</label>
+      <div id="experiences" class="dropdown"></div>
+    </div>
+
+    <div class="section">
+      <label>Variations</label>
+      <div id="variations" class="dropdown"></div>
+    </div>
+    <div class="section">
+      <label>JS File</label>
+      <div class="dropzone" id="jsDrop">Drop JS file here</div>
+    </div>
+
+    <div class="section">
+      <label>CSS File</label>
+      <div class="dropzone" id="cssDrop">Drop CSS file here</div>
+    </div>
+
+    <div class="section">
+      <button onclick="submitForm()">Submit</button>
+    </div>
+
+    <script src="{{scriptUri}}"></script>
+  </body>
+</html>
