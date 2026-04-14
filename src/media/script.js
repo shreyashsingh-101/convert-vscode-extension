@@ -26,11 +26,21 @@ function setLoading(state) {
 }
 
 function validateBeforeSubmit() {
-  if (!get("apiKey")) {return "API Key required";}
-  if (!get("accountId")) {return "Account ID required";}
-  if (!selectedProject) {return "Select project";}
-  if (!selectedExperience) {return "Select experiment";}
-  if (!selectedVariation) {return "Select variation";}
+  if (!get("apiKey")) {
+    return "API Key required";
+  }
+  if (!get("accountId")) {
+    return "Account ID required";
+  }
+  if (!selectedProject) {
+    return "Select project";
+  }
+  if (!selectedExperience) {
+    return "Select experiment";
+  }
+  if (!selectedVariation) {
+    return "Select variation";
+  }
 
   return null;
 }
@@ -64,7 +74,9 @@ window.addEventListener("message", ({ data }) => {
     case "restore":
       console.log("📥 Restore received:", data);
 
-      if (!data) {return;}
+      if (!data) {
+        return;
+      }
 
       set("apiKey", data.apiKey);
       set("accountId", data.accountId);
@@ -185,8 +197,11 @@ function selectExperience(id) {
   });
 }
 
+let isGlobal = false;
+
 function selectVariation(id) {
   selectedVariation = id;
+  isGlobal = id === "global";
   saveConfig();
 }
 
@@ -225,7 +240,7 @@ function submit() {
   setLoading(true);
 
   vscode.postMessage({
-    command: "submit",
+    command: isGlobal ? "submitGlobal" : "submitVariation",
     apiKey: get("apiKey"),
     accountId: get("accountId"),
     projectId: selectedProject,
@@ -276,37 +291,36 @@ function renderDropdown(id, items, onSelect, selectedId = null) {
   list.className = "dropdown-list";
 
   function renderList(data) {
-  list.innerHTML = "";
+    list.innerHTML = "";
 
-  if (!data.length) {
-    list.innerHTML = `<div class="dropdown-empty">No results</div>`;
-    return;
+    if (!data.length) {
+      list.innerHTML = `<div class="dropdown-empty">No results</div>`;
+      return;
+    }
+
+    const visibleItems = data.slice(0, DROPDOWN_LIMIT);
+
+    visibleItems.forEach((item) => {
+      const div = document.createElement("div");
+      div.className = "dropdown-item";
+      div.innerText = item.name;
+
+      div.onclick = () => {
+        input.value = item.name;
+        list.innerHTML = "";
+        onSelect(item.id);
+      };
+
+      list.appendChild(div);
+    });
+
+    if (data.length > DROPDOWN_LIMIT) {
+      const more = document.createElement("div");
+      more.className = "dropdown-more";
+      more.innerText = `+ ${data.length - DROPDOWN_LIMIT} more...`;
+      list.appendChild(more);
+    }
   }
-
-  const visibleItems = data.slice(0, DROPDOWN_LIMIT);
-
-  visibleItems.forEach(item => {
-    const div = document.createElement("div");
-    div.className = "dropdown-item";
-    div.innerText = item.name;
-
-    div.onclick = () => {
-      input.value = item.name;
-      list.innerHTML = "";
-      onSelect(item.id);
-    };
-
-    list.appendChild(div);
-  });
-
- 
-  if (data.length > DROPDOWN_LIMIT) {
-    const more = document.createElement("div");
-    more.className = "dropdown-more";
-    more.innerText = `+ ${data.length - DROPDOWN_LIMIT} more...`;
-    list.appendChild(more);
-  }
-}
 
   input.onfocus = () => renderList(items);
 

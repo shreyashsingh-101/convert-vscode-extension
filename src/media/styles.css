@@ -12,7 +12,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0;
-  height: 100vh;
+  min-height: 100vh;
+  height: auto;
+  position: relative;
+  padding-bottom: 100px;
 }
 
 /* ── Typography ─────────────────────────────── */
@@ -230,7 +233,10 @@ hr {
   color: var(--vscode-descriptionForeground);
   border: 1px solid transparent;
   border-radius: 3px;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s,
+    border-color 0.1s;
 }
 
 .file-item button:hover {

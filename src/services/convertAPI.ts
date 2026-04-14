@@ -4,7 +4,7 @@ async function request(
   url: string,
   apiKey: string,
   method: string = "POST",
-  body?: object
+  body?: object,
 ) {
   console.log(`🌐 ${method} ${url}`);
 
@@ -61,6 +61,20 @@ export const convertApi = {
       `${BASE_URL}/accounts/${accountId}/projects/${projectId}/experiences/${experienceId}?expand[]=variations`,
       apiKey,
       "GET",
+    ),
+
+  updateExperience: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    experienceId: string,
+    payload: { global_js?: string; global_css?: string },
+  ) =>
+    request(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}/experiences/${experienceId}/update`,
+      apiKey,
+      "POST",
+      payload,
     ),
 
   // Ready to wire up when the Convert API endpoint is confirmed

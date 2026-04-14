@@ -67,11 +67,66 @@ export async function handleMessage(
             name: v.name,
           })) || [];
 
+        variationsData.unshift({
+          id: "global",
+          name: "Global JS and CSS",
+          type: "global",
+        });
+
         webview.postMessage({ command: "variations", data: variationsData });
         break;
       }
 
-      case "submit": {
+      case "submitGlobal": {
+        console.log("🌐 Updating GLOBAL JS/CSS");
+
+        const files: vscode.Uri[] = fileStore.getAll();
+
+        if (!files.length) {
+          throw new Error("No files selected");
+        }
+
+        let jsCode = "";
+        let cssCode = "";
+
+        for (const fileUri of files) {
+          const content = await vscode.workspace.fs.readFile(fileUri);
+          const text = Buffer.from(content).toString("utf-8");
+          const fileName = fileUri.fsPath.split(/[\\/]/).pop();
+
+          if (fileUri.fsPath.endsWith(".js")) {
+            jsCode += `\n\n/* ${fileName} */\n${text}`;
+          } else if (fileUri.fsPath.endsWith(".css")) {
+            cssCode += `\n\n/* ${fileName} */\n${text}`;
+          }
+        }
+
+        if (!jsCode && !cssCode) {
+          throw new Error("No JS or CSS content to upload");
+        }
+
+        const response = await convertApi.updateExperience(
+          message.apiKey,
+          message.accountId,
+          message.projectId,
+          message.experienceId,
+          {
+            global_js: jsCode,
+            global_css: cssCode,
+          },
+        );
+
+        console.log("✅ Global update response:", response);
+
+        webview.postMessage({
+          command: "success",
+          message: "Global JS/CSS updated successfully!",
+        });
+
+        break;
+      }
+
+      case "submitVariation": {
         if (!message.apiKey || !message.accountId) {
           throw new Error("Missing API key or Account ID");
         }
