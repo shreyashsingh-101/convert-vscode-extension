@@ -5,59 +5,48 @@
   </head>
 
   <body>
-    <h2>Convert VSCode Extension</h2>
+    <h2>Convert</h2>
 
-    <div id="status" class="status"></div>
-    <div id="error" class="error"></div>
+    <div id="toast" class="toast"></div>
 
-    <!-- Files Section -->
-    <div id="filesSection">
-      <h3>📁 Files</h3>
-      <p class="section-hint">Drag files from Explorer or right-click to remove</p>
-      
-      <div id="filesList" class="files-list">
-        <div class="no-files">No files added yet - drag files here</div>
+    <div class="section">
+      <label>API Key</label>
+      <input id="apiKey" />
+    </div>
+
+    <div class="section">
+      <label>Account ID</label>
+      <input id="accountId" />
+    </div>
+
+    <button onclick="loadProjects()">Load Projects</button>
+
+    <div class="section">
+      <label>Project</label>
+      <div id="projects"></div>
+    </div>
+
+    <div class="section">
+      <label>Experiment</label>
+      <div id="experiences"></div>
+    </div>
+
+    <div class="section">
+      <label>Variation</label>
+      <div id="variations"></div>
+    </div>
+
+    <hr />
+
+    <h3>Files</h3>
+
+    <div id="filesList" class="files-list">
+      <div class="no-files">
+        Drag files into "Drop Files Here" panel below
       </div>
     </div>
 
-    <!-- API Configuration Section -->
-    <div id="apiSection">
-      <h3>API Configuration</h3>
-      
-      <section class="section">
-        <label for="apiKey">API Key</label>
-        <input id="apiKey" placeholder="Enter API_Key:API_Secret" />
-      </section>
-
-      <section class="section">
-        <label for="accountId">Account ID</label>
-        <input id="accountId" placeholder="Enter Account ID" />
-      </section>
-
-      <section class="section">
-        <button onclick="loadProjects()">Load Projects</button>
-      </section>
-
-      <div class="section">
-        <label for="projects">Projects</label>
-        <div id="projects" class="dropdown">No projects loaded</div>
-      </div>
-
-      <div class="section">
-        <label for="experiences">Experiments</label>
-        <div id="experiences" class="dropdown">No experiments loaded</div>
-      </div>
-
-      <div class="section">
-        <label for="variations">Variations</label>
-        <div id="variations" class="dropdown">No variations loaded</div>
-      </div>
-    </div>
-
-    <!-- Submit Section -->
-    <section class="section">
-      <button onclick="submitForm()">Submit</button>
-    </section>
+    <button onclick="submit()">Push to Convert</button>
 
     <script src="{{scriptUri}}"></script>
   </body>

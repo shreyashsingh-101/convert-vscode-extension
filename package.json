@@ -1,69 +1,33 @@
 {
   "name": "convert-vscode-extension",
-  "displayName": "convert_vscode_extension",
-  "description": "",
+  "displayName": "Convert Extension",
+  "description": "Upload JS/CSS files to Convert.com variations",
   "version": "0.0.1",
   "engines": {
-    "vscode": "^1.115.0"
+    "vscode": "^1.80.0"
   },
-  "categories": [
-    "Other"
-  ],
+  "categories": ["Other"],
+  "activationEvents": [],
   "main": "./out/extension.js",
-  "activationEvents": [
-    "onView:convertView"
-  ],
   "contributes": {
-    "commands": [
-      {
-        "command": "convert-vscode-extension.helloWorld",
-        "title": "Hello World"
-      },
-      {
-        "command": "convertView.removeFile",
-        "title": "Remove",
-        "icon": "$(close)"
-      },
-      {
-        "command": "convertView.clearFiles",
-        "title": "Clear All",
-        "icon": "$(clear-all)"
-      }
-    ],
-    "menus": {
-      "view/title": [
-        {
-          "command": "convertView.clearFiles",
-          "when": "view == convertView",
-          "group": "navigation"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "convertView.removeFile",
-          "when": "view == convertView",
-          "group": "inline"
-        }
-      ]
-    },
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "convertSidebar",
-          "title": "Convert VSCode Extension",
-          "icon": "$(star)"
+          "id": "convert-panel",
+          "title": "Convert",
+          "icon": "src/resources/icon.svg"
         }
       ]
     },
     "views": {
-      "convertSidebar": [
+      "convert-panel": [
         {
           "id": "convertDropZone",
           "name": "Drop Files Here",
           "type": "tree"
         },
         {
-          "id": "convertView",
+          "id": "convertSidebar",
           "name": "Convert",
           "type": "webview"
         }
@@ -74,18 +38,12 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src",
-    "test": "vscode-test"
+    "pretest": "npm run compile",
+    "lint": "eslint src"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^22.19.17",
-    "@types/vscode": "^1.115.0",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2",
-    "eslint": "^9.39.3",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.1"
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
   }
 }

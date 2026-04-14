@@ -1,146 +1,156 @@
 body {
   font-family: var(--vscode-font-family);
-  padding: 16px;
+  padding: 12px;
   color: var(--vscode-foreground);
 }
 
 h2 {
-  margin: 0 0 16px 0;
+  margin-bottom: 12px;
   font-size: 16px;
 }
 
 h3 {
-  margin: 16px 0 8px 0;
+  margin: 16px 0 8px;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--vscode-foreground);
+  opacity: 0.9;
 }
 
+/* Sections */
 .section {
-  margin-bottom: 12px;
+  margin-bottom: 20px;
 }
 
-.section-hint {
-  margin: 0 0 8px 0;
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-}
-
-.status {
-  color: var(--vscode-descriptionForeground);
-  margin-bottom: 8px;
-  font-size: 11px;
-}
-
-.error {
-  color: #ff6b6b;
-  margin-bottom: 8px;
-  font-size: 11px;
-  padding: 6px;
-  background: rgba(255, 107, 107, 0.1);
-  border-radius: 3px;
-}
-
-input {
+/* Inputs */
+input, select {
   width: 100%;
   padding: 6px;
   margin-top: 4px;
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   border: 1px solid var(--vscode-input-border);
-  border-radius: 3px;
-  box-sizing: border-box;
-  font-size: 12px;
+  border-radius: 4px;
 }
 
+/* Button */
 button {
   width: 100%;
-  padding: 6px;
+  padding: 8px;
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 12px;
+  margin-top: 6px;
 }
 
 button:hover {
   background: var(--vscode-button-hoverBackground);
 }
 
-.dropdown {
+/* Divider */
+hr {
+  border: none;
+  border-top: 1px solid var(--vscode-input-border);
+  margin: 14px 0;
+}
+
+/* File list */
+.files-list {
   border: 1px solid var(--vscode-input-border);
-  border-radius: 3px;
-  max-height: 120px;
+  border-radius: 6px;
+  padding: 6px;
+  background: var(--vscode-editor-background);
+}
+
+.no-files {
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.6;
+  padding: 10px;
+}
+
+/* File item */
+.file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  background: var(--vscode-editor-inactiveSelectionBackground);
+}
+
+.file-name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-item button {
+  width: auto;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.file-item button:hover {
+  background: red;
+  color: white;
+}
+
+
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  right: 20px;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  display: none;
+  z-index: 1000;
+}
+
+.toast.success {
+  background: #2ea043;
+  color: white;
+}
+
+.toast.error {
+  background: #da3633;
+  color: white;
+}
+
+
+.dropdown-input {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+}
+
+.dropdown-list {
+  border: 1px solid var(--vscode-input-border);
+  border-top: none;
+  max-height: 140px;
   overflow-y: auto;
-  margin-top: 4px;
-  background: var(--vscode-input-background);
+  background: var(--vscode-editor-background);
 }
 
 .dropdown-item {
   padding: 6px;
   cursor: pointer;
-  font-size: 12px;
 }
 
 .dropdown-item:hover {
   background: var(--vscode-list-hoverBackground);
 }
 
-/* Files Section */
-#filesSection {
-  margin-top: 20px;
-  padding-top: 12px;
-  border-top: 1px solid var(--vscode-panel-border);
+.dropdown-item.selected {
+  background: var(--vscode-list-activeSelectionBackground);
 }
 
-.files-list {
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 3px;
-  background: var(--vscode-input-background);
-  max-height: 150px;
-  overflow-y: auto;
-  margin-bottom: 8px;
-}
-
-.no-files {
-  padding: 12px;
-  text-align: center;
-  color: var(--vscode-descriptionForeground);
-  font-size: 12px;
-}
-
-.file-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
-  font-size: 12px;
-}
-
-.file-item:last-child {
-  border-bottom: none;
-}
-
-.file-name {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.remove-btn {
-  width: auto;
-  padding: 2px 6px;
-  margin-left: 6px;
-  font-size: 11px;
-  background: transparent;
-  color: var(--vscode-foreground);
-  border: none;
-  cursor: pointer;
-}
-
-.remove-btn:hover {
-  background: var(--vscode-button-hoverBackground);
+.dropdown-empty {
+  padding: 6px;
+  opacity: 0.6;
 }
