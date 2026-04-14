@@ -1,145 +1,148 @@
-body {
-  font-family: var(--vscode-font-family);
-  padding: 12px;
-  color: var(--vscode-foreground);
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  padding: 14px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  height: 100vh;
+}
+
+/* ── Typography ─────────────────────────────── */
+
 h2 {
-  margin-bottom: 12px;
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  margin-bottom: 16px;
+  letter-spacing: 0.1px;
 }
 
 h3 {
-  margin: 16px 0 8px;
-  font-size: 13px;
-  opacity: 0.9;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 6px;
 }
 
-/* Sections */
+/* ── Sections ───────────────────────────────── */
+
 .section {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
-/* Inputs */
-input, select {
+.section label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 4px;
+}
+
+/* ── Inputs & Selects ───────────────────────── */
+
+input,
+select {
   width: 100%;
-  padding: 6px;
-  margin-top: 4px;
+  padding: 5px 8px;
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   border: 1px solid var(--vscode-input-border);
   border-radius: 4px;
+  font-family: var(--vscode-font-family);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.1s;
 }
 
-/* Button */
+input:focus,
+select:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+/* ── Buttons ────────────────────────────────── */
+
 button {
   width: 100%;
-  padding: 8px;
+  padding: 6px 10px;
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  margin-top: 6px;
+  font-family: var(--vscode-font-family);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  transition: background 0.1s;
+  margin-top: 20px;
+  margin-bottom: 20px;
 }
 
 button:hover {
   background: var(--vscode-button-hoverBackground);
 }
 
-/* Divider */
+button:active {
+  opacity: 0.85;
+}
+
+/* ── Divider ────────────────────────────────── */
+
 hr {
   border: none;
-  border-top: 1px solid var(--vscode-input-border);
-  margin: 14px 0;
+  border-top: 1px solid var(--vscode-panel-border);
+  margin: 16px 0;
 }
 
-/* File list */
-.files-list {
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 6px;
-  padding: 6px;
-  background: var(--vscode-editor-background);
+/* ── Dropdowns ──────────────────────────────── */
+
+#projects,
+#experiences,
+#variations {
+  margin-top: 4px;
 }
 
-.no-files {
-  text-align: center;
+.dropdown-empty {
+  padding: 6px 8px;
   font-size: 12px;
-  opacity: 0.6;
-  padding: 10px;
-}
-
-/* File item */
-.file-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px;
-  border-radius: 4px;
-  margin-bottom: 4px;
-  background: var(--vscode-editor-inactiveSelectionBackground);
-}
-
-.file-name {
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-item button {
-  width: auto;
-  padding: 2px 8px;
-  font-size: 12px;
-}
-
-.file-item button:hover {
-  background: red;
-  color: white;
-}
-
-
-.toast {
-  position: fixed;
-  bottom: 20px;
-  left: 20px;
-  right: 20px;
-  padding: 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  display: none;
-  z-index: 1000;
-}
-
-.toast.success {
-  background: #2ea043;
-  color: white;
-}
-
-.toast.error {
-  background: #da3633;
-  color: white;
-}
-
-
-.dropdown-input {
-  width: 100%;
-  padding: 6px;
+  color: var(--vscode-descriptionForeground);
   border: 1px solid var(--vscode-input-border);
   border-radius: 4px;
+  background: var(--vscode-input-background);
 }
 
 .dropdown-list {
   border: 1px solid var(--vscode-input-border);
-  border-top: none;
-  max-height: 140px;
-  overflow-y: auto;
+  border-radius: 4px;
+  overflow: hidden;
   background: var(--vscode-editor-background);
 }
 
 .dropdown-item {
-  padding: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
   cursor: pointer;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.dropdown-item:last-child {
+  border-bottom: none;
 }
 
 .dropdown-item:hover {
@@ -148,9 +151,162 @@ hr {
 
 .dropdown-item.selected {
   background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
 }
 
-.dropdown-empty {
+.dropdown-more {
   padding: 6px;
+  font-size: 11px;
   opacity: 0.6;
+  text-align: center;
+}
+
+/* ── File List ──────────────────────────────── */
+
+.files-list {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  background: var(--vscode-editor-background);
+  overflow: hidden;
+  margin-bottom: 10px;
+  min-height: 48px;
+}
+
+.no-files {
+  padding: 14px 10px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.5;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.file-item:last-child {
+  border-bottom: none;
+}
+
+.file-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-path {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.file-item button {
+  width: auto;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 0;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.file-item button:hover {
+  background: #c72e2e22;
+  color: #e06060;
+  border-color: #c72e2e44;
+}
+
+/* ── Toast ──────────────────────────────────── */
+
+.toast {
+  position: fixed;
+  bottom: 16px;
+  left: 12px;
+  right: 12px;
+  padding: 9px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  display: none;
+  z-index: 1000;
+  animation: slideUp 0.15s ease-out;
+}
+
+.toast.visible {
+  display: block;
+}
+
+.toast.success {
+  background: var(--vscode-notificationsInfoBackground, #1d3a1d);
+  color: var(--vscode-notificationsForeground, #7ec87e);
+  border: 1px solid #2a5a2a;
+}
+
+.toast.error {
+  background: var(--vscode-inputValidation-errorBackground, #3a1d1d);
+  color: #e06060;
+  border: 1px solid #5a2a2a;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.loader {
+  border: 2px solid transparent;
+  border-top: 2px solid white;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  margin-left: 6px;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+footer {
+  position: absolute;
+  width: 100%;
+  left: 0;
+  padding: 10px;
+  bottom: 0px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  p {
+    text-align: center;
+  }
 }

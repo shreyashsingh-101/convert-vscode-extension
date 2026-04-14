@@ -3,30 +3,54 @@ const vscode = acquireVsCodeApi();
 let selectedProject = null;
 let selectedExperience = null;
 let selectedVariation = null;
+let isLoading = false;
+
+const DROPDOWN_LIMIT = 5;
+
+function setLoading(state) {
+  isLoading = state;
+
+  const btn = document.getElementById("submitBtn");
+  const text = document.getElementById("btnText");
+  const loader = document.getElementById("btnLoader");
+
+  if (state) {
+    btn.disabled = true;
+    text.innerText = "Pushing...";
+    loader.style.display = "inline-block";
+  } else {
+    btn.disabled = false;
+    text.innerText = "Push to Convert";
+    loader.style.display = "none";
+  }
+}
 
 function validateBeforeSubmit() {
-  if (!get("apiKey")) return "API Key required";
-  if (!get("accountId")) return "Account ID required";
-  if (!selectedProject) return "Select project";
-  if (!selectedExperience) return "Select experiment";
-  if (!selectedVariation) return "Select variation";
+  if (!get("apiKey")) {return "API Key required";}
+  if (!get("accountId")) {return "Account ID required";}
+  if (!selectedProject) {return "Select project";}
+  if (!selectedExperience) {return "Select experiment";}
+  if (!selectedVariation) {return "Select variation";}
 
   return null;
 }
 
 function set(id, value) {
-  if (value) document.getElementById(id).value = value;
+  if (value) {
+    document.getElementById(id).value = value;
+  }
 }
 
-function showToast(msg, type = "success") {
-  const el = document.getElementById("toast");
-  el.innerText = msg;
-  el.className = `toast ${type}`;
-  el.style.display = "block";
+let toastTimer = null;
 
-  setTimeout(() => {
-    el.style.display = "none";
-  }, 3000);
+function showToast(message, type = "success") {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.className = `toast visible ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.className = "toast";
+  }, 3500);
 }
 
 // ---------- MESSAGE LISTENER ----------
@@ -40,7 +64,7 @@ window.addEventListener("message", ({ data }) => {
     case "restore":
       console.log("📥 Restore received:", data);
 
-      if (!data) return;
+      if (!data) {return;}
 
       set("apiKey", data.apiKey);
       set("accountId", data.accountId);
@@ -77,12 +101,14 @@ window.addEventListener("message", ({ data }) => {
       );
       break;
 
-    case "error":
-      showToast(data.message, "error");
+    case "success":
+      setLoading(false);
+      showToast(data.message || "Success", "success");
       break;
 
-    case "success":
-      showToast(data.message, "success");
+    case "error":
+      setLoading(false);
+      showToast(data.message || "Something went wrong", "error");
       break;
   }
 });
@@ -104,8 +130,11 @@ function renderFiles(files) {
     div.className = "file-item";
 
     div.innerHTML = `
-      <span class="file-name">${file.name}</span>
-      <button>✕</button>
+      <div class="file-info">
+        <div class="file-name">${file.name}</div>
+        <div class="file-path">${file.fsPath}</div>
+      </div>
+      <button title="Remove" data-path="${file.fsPath}">✕</button>
     `;
 
     div.querySelector("button").onclick = () => {
@@ -118,6 +147,13 @@ function renderFiles(files) {
 
 // ---------- API FLOW ----------
 function loadProjects() {
+  const apiKeyVal = document.getElementById("apiKey").value.trim();
+  const accountId = document.getElementById("accountId").value.trim();
+
+  if (!apiKeyVal || !accountId) {
+    showToast("API Key and Account ID are required", "error");
+    return;
+  }
   vscode.postMessage({
     command: "getProjects",
     apiKey: get("apiKey"),
@@ -128,7 +164,6 @@ function loadProjects() {
 function selectProject(id) {
   selectedProject = id;
   saveConfig();
-
   vscode.postMessage({
     command: "getExperiences",
     apiKey: get("apiKey"),
@@ -157,11 +192,37 @@ function selectVariation(id) {
 
 // ---------- SUBMIT ----------
 function submit() {
+  const apiKeyVal = document.getElementById("apiKey").value.trim();
+  const accountId = document.getElementById("accountId").value.trim();
+
+  if (!apiKeyVal || !accountId) {
+    showToast("API Key and Account ID are required", "error");
+    return;
+  }
+  if (!selectedProject) {
+    showToast("Please select a project", "error");
+    return;
+  }
+  if (!selectedExperience) {
+    showToast("Please select an experiment", "error");
+    return;
+  }
+  if (!selectedVariation) {
+    showToast("Please select a variation", "error");
+    return;
+  }
+
+  if (isLoading) {
+    return;
+  }
+
   const error = validateBeforeSubmit();
   if (error) {
     showToast(error, "error");
     return;
   }
+
+  setLoading(true);
 
   vscode.postMessage({
     command: "submit",
@@ -201,7 +262,6 @@ document.getElementById("accountId").addEventListener("input", () => {
   saveConfig();
 });
 
-
 function renderDropdown(id, items, onSelect, selectedId = null) {
   const container = document.getElementById(id);
   container.innerHTML = "";
@@ -216,41 +276,54 @@ function renderDropdown(id, items, onSelect, selectedId = null) {
   list.className = "dropdown-list";
 
   function renderList(data) {
-    list.innerHTML = "";
+  list.innerHTML = "";
 
-    if (!data.length) {
-      list.innerHTML = `<div class="dropdown-empty">No results</div>`;
-      return;
-    }
-
-    data.slice(0, 50).forEach(item => {
-      const div = document.createElement("div");
-      div.className = "dropdown-item";
-
-      div.innerText = item.name;
-
-      if (item.id == selectedId) {
-        div.classList.add("selected");
-        input.value = item.name;
-      }
-
-      div.onclick = () => {
-        input.value = item.name;
-        list.innerHTML = "";
-        onSelect(item.id);
-      };
-
-      list.appendChild(div);
-    });
+  if (!data.length) {
+    list.innerHTML = `<div class="dropdown-empty">No results</div>`;
+    return;
   }
+
+  const visibleItems = data.slice(0, DROPDOWN_LIMIT);
+
+  visibleItems.forEach(item => {
+    const div = document.createElement("div");
+    div.className = "dropdown-item";
+    div.innerText = item.name;
+
+    div.onclick = () => {
+      input.value = item.name;
+      list.innerHTML = "";
+      onSelect(item.id);
+    };
+
+    list.appendChild(div);
+  });
+
+ 
+  if (data.length > DROPDOWN_LIMIT) {
+    const more = document.createElement("div");
+    more.className = "dropdown-more";
+    more.innerText = `+ ${data.length - DROPDOWN_LIMIT} more...`;
+    list.appendChild(more);
+  }
+}
 
   input.onfocus = () => renderList(items);
 
   input.oninput = () => {
     const val = input.value.toLowerCase();
-    const filtered = items.filter(i =>
-      i.name.toLowerCase().includes(val)
-    );
+
+    // 🔥 if user clears input → clear selection
+    if (!val) {
+      selectedProject = null;
+      selectedExperience = null;
+      selectedVariation = null;
+
+      saveConfig();
+    }
+
+    const filtered = items.filter((i) => i.name.toLowerCase().includes(val));
+
     renderList(filtered);
   };
 
@@ -260,7 +333,6 @@ function renderDropdown(id, items, onSelect, selectedId = null) {
 
   renderList(items);
 }
-
 
 window.addEventListener("load", () => {
   console.log("Webview loaded → requesting config");

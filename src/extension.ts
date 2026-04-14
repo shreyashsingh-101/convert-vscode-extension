@@ -58,7 +58,7 @@ class DropTreeProvider
   }
 
   async handleDrop(
-    target: vscode.TreeItem | undefined,
+    _target: vscode.TreeItem | undefined,
     dataTransfer: vscode.DataTransfer,
   ) {
     console.log("🎯 Drop triggered");
@@ -76,9 +76,37 @@ class DropTreeProvider
       .filter(Boolean)
       .map((s) => vscode.Uri.parse(s));
 
-    console.log("📂 Files received:", uris.length);
+    const valid: vscode.Uri[] = [];
+    const invalid: string[] = [];
 
-    this.store.add(uris);
+    for (const uri of uris) {
+      const path = uri.fsPath.toLowerCase();
+
+      // ✅ allow only .js and .css
+      if (path.endsWith(".js") || path.endsWith(".css")) {
+        valid.push(uri);
+      } else {
+        invalid.push(uri.fsPath);
+      }
+    }
+
+    // ❌ Reject invalid files
+    if (invalid.length) {
+      vscode.window.showWarningMessage(
+        `Only JS/CSS allowed. Ignored: ${invalid
+          .map((p) => p.split(/[\\/]/).pop())
+          .join(", ")}`,
+      );
+    }
+
+    if (!valid.length) {
+      console.log("⚠️ No valid files to add");
+      return;
+    }
+
+    console.log("✅ Valid files:", valid.length);
+
+    this.store.add(valid);
   }
 }
 // ─── Webview Provider ───────────────────────────────────────
@@ -188,7 +216,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("convertSidebar", sidebar, {
       webviewOptions: {
-        retainContextWhenHidden: true, 
+        retainContextWhenHidden: true,
       },
     }),
     treeView,

@@ -5,17 +5,17 @@
   </head>
 
   <body>
-    <h2>Convert</h2>
+    <h2>CONVERT VSCODE EXTENSION</h2>
 
     <div id="toast" class="toast"></div>
 
     <div class="section">
-      <label>API Key</label>
-      <input id="apiKey" />
+      <label for="apiKey">API Key</label>
+      <input placeholder="API_KEY:API_SECRET" id="apiKey" />
     </div>
 
     <div class="section">
-      <label>Account ID</label>
+      <label for="accountId">Account ID</label>
       <input id="accountId" />
     </div>
 
@@ -46,7 +46,16 @@
       </div>
     </div>
 
-    <button onclick="submit()">Push to Convert</button>
+    <div class="section">
+      <button id="submitBtn" onclick="submit()">
+        <span id="btnText">Push to Convert</span>
+        <span id="btnLoader" class="loader" style="display:none;"></span>
+      </button>
+    </div>
+
+    <footer>
+      <p>By <a href="https://github.com/shreyashsingh-101" target="_blank">SS</a></p>
+    </footer>
 
     <script src="{{scriptUri}}"></script>
   </body>

@@ -1,71 +1,60 @@
-# convert-vscode-extension README
+# Convert VSCode Extension
 
-This is the README for your extension "convert-vscode-extension". After writing up a brief description, we recommend including the following sections.
-
-## Features
-
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
-
-## Requirements
-
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
+A powerful Visual Studio Code extension to **push JavaScript & CSS changes directly to Convert experiments** — eliminating manual copy-paste and speeding up A/B testing workflows.
 
 ---
 
-## Following extension guidelines
+## ✨ Features
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+- 🔗 Connect using Convert API Key  
+- 📂 Select **Account → Project → Experiment → Variation**  
+- 🧠 Smart **searchable dropdowns** for large datasets  
+- 📥 Drag & drop JS/CSS files directly from VS Code Explorer  
+- 🎯 Clean, minimal UI with native VS Code feel  
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+---
 
-## Working with Markdown
+## 🧰 Tech Stack
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
+- **TypeScript** – Extension logic  
+- **VS Code Extension API** – UI + lifecycle  
+- **Webview (HTML/CSS/JS)** – Custom UI  
+- **Convert API v2** – Experiment integration  
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
+---
 
-## For more information
+## 📸 How It Works
 
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
+1. Enter your **Convert API Key & Account ID**
+2. Load and select:
+   - Project
+   - Experiment
+   - Variation
+3. Drag `.js` / `.css` files into the extension
+4. Click **Push to Convert**
+5. 🚀 Your changes are instantly applied
 
-**Enjoy!**
+---
+
+## 🚀 Getting Started for Local Developments
+
+1. Clone the repo
+2. Run `npm install` to install dependencies
+3. Press `F5` to launch the extension in a new VS Code window
+4. Open the **Convert VSCode Extension** from the sidebar
+
+## 🤝 Contributing
+
+Contributions are welcome!
+Please open an issue or submit a pull request.
+
+## 📄 License
+
+MIT License.
+
+## ⭐ Support
+
+If you found this useful:
+
+👉 Star the repo
+👉 Share with your team

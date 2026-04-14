@@ -14,7 +14,7 @@
       "activitybar": [
         {
           "id": "convert-panel",
-          "title": "Convert",
+          "title": "Convert VSCode Extension",
           "icon": "src/resources/icon.svg"
         }
       ]
@@ -23,13 +23,15 @@
       "convert-panel": [
         {
           "id": "convertDropZone",
-          "name": "Drop Files Here",
-          "type": "tree"
+          "name": "Files Drop Zone",
+          "type": "tree",
+          "icon": "src/resources/icon.svg"
         },
         {
           "id": "convertSidebar",
-          "name": "Convert",
-          "type": "webview"
+          "name": "CVE",
+          "type": "webview",
+          "icon": "src/resources/icon.svg"
         }
       ]
     }

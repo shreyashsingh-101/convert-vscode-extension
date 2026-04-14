@@ -153,11 +153,11 @@ export async function handleMessage(
           },
         );
 
-        console.log("🚀 Final API response:", response);
+        console.log("Final API response:", response);
 
         webview.postMessage({
           command: "success",
-          message: "Code pushed successfully 🚀",
+          message: "Code pushed successfully!",
         });
 
         break;
