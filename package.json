@@ -10,28 +10,61 @@
     "Other"
   ],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onView:convertView"
+  ],
   "contributes": {
     "commands": [
       {
         "command": "convert-vscode-extension.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "convertView.removeFile",
+        "title": "Remove",
+        "icon": "$(close)"
+      },
+      {
+        "command": "convertView.clearFiles",
+        "title": "Clear All",
+        "icon": "$(clear-all)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "convertView.clearFiles",
+          "when": "view == convertView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "convertView.removeFile",
+          "when": "view == convertView",
+          "group": "inline"
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {
           "id": "convertSidebar",
           "title": "Convert VSCode Extension",
-          "icon": "src/resources/icon.svg"
+          "icon": "$(star)"
         }
       ]
     },
     "views": {
       "convertSidebar": [
         {
+          "id": "convertDropZone",
+          "name": "Drop Files Here",
+          "type": "tree"
+        },
+        {
           "id": "convertView",
-          "name": "Convert VSCode Extension",
-          "icon": "src/resources/icon.svg",
+          "name": "Convert",
           "type": "webview"
         }
       ]

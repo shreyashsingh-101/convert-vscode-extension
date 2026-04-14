@@ -5,47 +5,59 @@
   </head>
 
   <body>
-    <h2>Convert Extension</h2>
+    <h2>Convert VSCode Extension</h2>
 
-    <section>
-      <label for="apiKey">API Key</label>
-      <input id="apiKey" placeholder="Enter API_Key:API_Secret" />
-      <button onclick="loadProjects()">Load Projects</button>
-    </section>
+    <div id="status" class="status"></div>
+    <div id="error" class="error"></div>
 
-
-    <div class="section">
-      <label for="accountId">Account ID</label>
-      <input id="accountId" placeholder="Enter Account ID" />
+    <!-- Files Section -->
+    <div id="filesSection">
+      <h3>📁 Files</h3>
+      <p class="section-hint">Drag files from Explorer or right-click to remove</p>
+      
+      <div id="filesList" class="files-list">
+        <div class="no-files">No files added yet - drag files here</div>
+      </div>
     </div>
 
-    <div class="section">
-      <label>Projects</label>
-      <div id="projects" class="dropdown"></div>
+    <!-- API Configuration Section -->
+    <div id="apiSection">
+      <h3>API Configuration</h3>
+      
+      <section class="section">
+        <label for="apiKey">API Key</label>
+        <input id="apiKey" placeholder="Enter API_Key:API_Secret" />
+      </section>
+
+      <section class="section">
+        <label for="accountId">Account ID</label>
+        <input id="accountId" placeholder="Enter Account ID" />
+      </section>
+
+      <section class="section">
+        <button onclick="loadProjects()">Load Projects</button>
+      </section>
+
+      <div class="section">
+        <label for="projects">Projects</label>
+        <div id="projects" class="dropdown">No projects loaded</div>
+      </div>
+
+      <div class="section">
+        <label for="experiences">Experiments</label>
+        <div id="experiences" class="dropdown">No experiments loaded</div>
+      </div>
+
+      <div class="section">
+        <label for="variations">Variations</label>
+        <div id="variations" class="dropdown">No variations loaded</div>
+      </div>
     </div>
 
-    <div class="section">
-      <label>Experiences</label>
-      <div id="experiences" class="dropdown"></div>
-    </div>
-
-    <div class="section">
-      <label>Variations</label>
-      <div id="variations" class="dropdown"></div>
-    </div>
-    <div class="section">
-      <label>JS File</label>
-      <div class="dropzone" id="jsDrop">Drop JS file here</div>
-    </div>
-
-    <div class="section">
-      <label>CSS File</label>
-      <div class="dropzone" id="cssDrop">Drop CSS file here</div>
-    </div>
-
-    <div class="section">
+    <!-- Submit Section -->
+    <section class="section">
       <button onclick="submitForm()">Submit</button>
-    </div>
+    </section>
 
     <script src="{{scriptUri}}"></script>
   </body>
