@@ -237,6 +237,18 @@ function submit() {
     return;
   }
 
+  const target = isGlobal
+    ? "Global JS and CSS"
+    : "selected variation";
+
+  openModal(
+    `Push code to ${target}?`,
+    () => executeSubmit()
+  );
+
+}
+
+function executeSubmit() {
   setLoading(true);
 
   vscode.postMessage({
@@ -352,3 +364,25 @@ window.addEventListener("load", () => {
   console.log("Webview loaded → requesting config");
   vscode.postMessage({ command: "getConfig" });
 });
+
+
+let pendingSubmit = null;
+
+function openModal(text, callback) {
+  document.getElementById("confirmText").innerText = text;
+  document.getElementById("confirmModal").classList.remove("hidden");
+
+  pendingSubmit = callback;
+}
+
+function closeModal() {
+  document.getElementById("confirmModal").classList.add("hidden");
+  pendingSubmit = null;
+}
+
+function confirmSubmit() {
+  if (pendingSubmit) {
+    pendingSubmit();
+  }
+  closeModal();
+}

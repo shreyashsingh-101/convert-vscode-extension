@@ -41,21 +41,35 @@
     <h3>Files</h3>
 
     <div id="filesList" class="files-list">
-      <div class="no-files">
-        Drag files into "Drop Files Here" panel below
-      </div>
+      <div class="no-files">Drag files into "Drop Files Here" panel below</div>
     </div>
 
     <div class="section">
       <button id="submitBtn" onclick="submit()">
         <span id="btnText">Push to Convert</span>
-        <span id="btnLoader" class="loader" style="display:none;"></span>
+        <span id="btnLoader" class="loader" style="display: none"></span>
       </button>
     </div>
 
     <footer>
-      <p>By <a href="https://github.com/shreyashsingh-101" target="_blank">SS</a></p>
+      <p>
+        By <a href="https://github.com/shreyashsingh-101" target="_blank">SS</a>
+      </p>
     </footer>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal hidden">
+      <div class="modal-content">
+        <h3>Confirm Push</h3>
+
+        <p id="confirmText"></p>
+
+        <div class="modal-actions">
+          <button onclick="confirmSubmit()">Confirm</button>
+          <button onclick="closeModal()" class="secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
 
     <script src="{{scriptUri}}"></script>
   </body>
