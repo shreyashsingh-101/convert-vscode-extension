@@ -77,7 +77,6 @@ export const convertApi = {
       payload,
     ),
 
-  // Ready to wire up when the Convert API endpoint is confirmed
   updateVariation: async (
     apiKey: string,
     accountId: string,

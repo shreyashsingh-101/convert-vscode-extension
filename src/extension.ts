@@ -125,8 +125,6 @@ class SidebarProvider implements vscode.WebviewViewProvider {
   resolveWebviewView(view: vscode.WebviewView) {
     this.view = view;
 
-    const saved = this.context.globalState.get("config");
-
     view.webview.options = {
       enableScripts: true,
       localResourceRoots: [
