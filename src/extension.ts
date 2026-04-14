@@ -128,7 +128,7 @@ class SidebarProvider implements vscode.WebviewViewProvider {
     view.webview.options = {
       enableScripts: true,
       localResourceRoots: [
-        vscode.Uri.joinPath(this.extensionUri, "src", "media"),
+        vscode.Uri.joinPath(this.extensionUri, "media"),
       ],
     };
 
@@ -175,7 +175,6 @@ class SidebarProvider implements vscode.WebviewViewProvider {
   private getHtml(webview: vscode.Webview) {
     const htmlPath = vscode.Uri.joinPath(
       this.extensionUri,
-      "src",
       "media",
       "index.html",
     );
@@ -183,11 +182,11 @@ class SidebarProvider implements vscode.WebviewViewProvider {
     let html = require("fs").readFileSync(htmlPath.fsPath, "utf-8");
 
     const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, "src", "media", "script.js"),
+      vscode.Uri.joinPath(this.extensionUri, "media", "script.js"),
     );
 
     const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, "src", "media", "styles.css"),
+      vscode.Uri.joinPath(this.extensionUri, "media", "styles.css"),
     );
 
     html = html.replace("{{scriptUri}}", scriptUri.toString());

@@ -360,11 +360,6 @@ function renderDropdown(id, items, onSelect, selectedId = null) {
   renderList(items);
 }
 
-window.addEventListener("load", () => {
-  console.log("Webview loaded → requesting config");
-  vscode.postMessage({ command: "getConfig" });
-});
-
 
 let pendingSubmit = null;
 

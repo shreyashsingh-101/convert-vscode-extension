@@ -1,12 +1,18 @@
 {
   "name": "convert-vscode-extension",
-  "displayName": "Convert Extension",
+  "displayName": "Convert VSCode Extension",
   "description": "Upload JS/CSS files to Convert.com variations",
-  "version": "0.0.1",
+  "version": "0.0.2",
+  "publisher": "ShreyashSingh101",
   "engines": {
     "vscode": "^1.80.0"
   },
+  "icon": "resources/icon.png",
   "categories": ["Other"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shreyashsingh-101/convert-vscode-extension"
+  },
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
@@ -15,7 +21,7 @@
         {
           "id": "convert-panel",
           "title": "Convert VSCode Extension",
-          "icon": "src/resources/icon.svg"
+          "icon": "/resources/icon.svg"
         }
       ]
     },
@@ -25,13 +31,13 @@
           "id": "convertDropZone",
           "name": "Files Drop Zone",
           "type": "tree",
-          "icon": "src/resources/icon.svg"
+          "icon": "/resources/icon.svg"
         },
         {
           "id": "convertSidebar",
           "name": "CVE",
           "type": "webview",
-          "icon": "src/resources/icon.svg"
+          "icon": "/resources/icon.svg"
         }
       ]
     }
