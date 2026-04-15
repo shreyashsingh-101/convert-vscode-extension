@@ -20,28 +20,37 @@ export async function handleMessage(
         break;
       }
       case "getProjects": {
-        console.log("📊 Getting projects for account:", message.accountId);
+        console.log("📊 Fetching projects", message.search);
+
         const projects = await convertApi.getProjects(
           message.apiKey,
           message.accountId,
+          message.search,
         );
-        webview.postMessage({ command: "projects", data: projects });
+
+        webview.postMessage({
+          command: "projects",
+          data: projects,
+        });
+
         break;
       }
 
       case "getExperiences": {
-        console.log(
-          "🔬 Getting experiences — Account:",
-          message.accountId,
-          "Project:",
-          message.projectId,
-        );
+        console.log("🔬 Fetching experiences", message.search);
+
         const experiences = await convertApi.getExperiences(
           message.apiKey,
           message.accountId,
           message.projectId,
+          message.search,
         );
-        webview.postMessage({ command: "experiences", data: experiences });
+
+        webview.postMessage({
+          command: "experiences",
+          data: experiences,
+        });
+
         break;
       }
 

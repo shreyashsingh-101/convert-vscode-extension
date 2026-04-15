@@ -267,13 +267,13 @@ hr {
 
 .toast.success {
   background: var(--vscode-notificationsInfoBackground, #1d3a1d);
-  color: var(--vscode-notificationsForeground, #7ec87e);
+  color: #fff;
   border: 1px solid #2a5a2a;
 }
 
 .toast.error {
   background: var(--vscode-inputValidation-errorBackground, #3a1d1d);
-  color: #e06060;
+  color: #fff;
   border: 1px solid #5a2a2a;
 }
 

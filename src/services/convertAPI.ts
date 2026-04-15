@@ -41,14 +41,22 @@ async function request(
 }
 
 export const convertApi = {
-  getProjects: (apiKey: string, accountId: string) =>
-    request(`${BASE_URL}/accounts/${accountId}/projects`, apiKey, "POST"),
+  getProjects: (apiKey: string, accountId: string, search?: string) =>
+    request(`${BASE_URL}/accounts/${accountId}/projects`, apiKey, "POST", {
+      search: search || "",
+    }),
 
-  getExperiences: (apiKey: string, accountId: string, projectId: string) =>
+  getExperiences: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    search?: string,
+  ) =>
     request(
       `${BASE_URL}/accounts/${accountId}/projects/${projectId}/experiences`,
       apiKey,
       "POST",
+      { search: search || "" },
     ),
 
   getVariations: (

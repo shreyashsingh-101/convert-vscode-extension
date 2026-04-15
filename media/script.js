@@ -237,15 +237,9 @@ function submit() {
     return;
   }
 
-  const target = isGlobal
-    ? "Global JS and CSS"
-    : "selected variation";
+  const target = isGlobal ? "Global JS and CSS" : "selected variation";
 
-  openModal(
-    `Push code to ${target}?`,
-    () => executeSubmit()
-  );
-
+  openModal(`Push code to ${target}?`, () => executeSubmit());
 }
 
 function executeSubmit() {
@@ -289,30 +283,35 @@ document.getElementById("accountId").addEventListener("input", () => {
   saveConfig();
 });
 
-function renderDropdown(id, items, onSelect, selectedId = null) {
+function renderDropdown(id, items, onSelect) {
   const container = document.getElementById(id);
   container.innerHTML = "";
+
+  let allItems = items || [];
+  let filtered = [...allItems];
 
   const wrapper = document.createElement("div");
 
   const input = document.createElement("input");
-  input.placeholder = "Search...";
   input.className = "dropdown-input";
+  input.placeholder =
+    id === "variations"
+      ? "Type to filter..."
+      : "Type to filter • Enter to search";
 
   const list = document.createElement("div");
   list.className = "dropdown-list";
 
+  // 🔥 Render list
   function renderList(data) {
     list.innerHTML = "";
 
     if (!data.length) {
-      list.innerHTML = `<div class="dropdown-empty">No results</div>`;
+      list.innerHTML = "<div class='dropdown-empty'>No results</div>";
       return;
     }
 
-    const visibleItems = data.slice(0, DROPDOWN_LIMIT);
-
-    visibleItems.forEach((item) => {
+    data.slice(0, 20).forEach((item) => {
       const div = document.createElement("div");
       div.className = "dropdown-item";
       div.innerText = item.name;
@@ -326,40 +325,70 @@ function renderDropdown(id, items, onSelect, selectedId = null) {
       list.appendChild(div);
     });
 
-    if (data.length > DROPDOWN_LIMIT) {
+    if (data.length > 20) {
       const more = document.createElement("div");
       more.className = "dropdown-more";
-      more.innerText = `+ ${data.length - DROPDOWN_LIMIT} more...`;
+      more.innerText = `+ ${data.length - 20} more...`;
       list.appendChild(more);
     }
   }
 
-  input.onfocus = () => renderList(items);
-
+  // ✅ LOCAL FILTER (all dropdowns)
   input.oninput = () => {
     const val = input.value.toLowerCase();
 
-    // 🔥 if user clears input → clear selection
-    if (!val) {
-      selectedProject = null;
-      selectedExperience = null;
-      selectedVariation = null;
-
-      saveConfig();
-    }
-
-    const filtered = items.filter((i) => i.name.toLowerCase().includes(val));
+    filtered = allItems.filter((i) =>
+      i.name.toLowerCase().includes(val)
+    );
 
     renderList(filtered);
+  };
+
+  // 🔥 ENTER → API SEARCH (ONLY for projects & experiences)
+  input.onkeydown = (e) => {
+    if (e.key !== "Enter") return;
+
+    // ❌ Skip API for variations
+    if (id === "variations") return;
+
+    e.preventDefault();
+
+    const search = input.value.trim();
+
+    list.innerHTML =
+      "<div class='dropdown-empty'>Searching...</div>";
+
+    if (id === "projects") {
+      vscode.postMessage({
+        command: "getProjects",
+        apiKey: get("apiKey"),
+        accountId: get("accountId"),
+        search,
+      });
+    }
+
+    if (id === "experiences") {
+      if (!selectedProject) {
+        showToast("Select project first", "error");
+        return;
+      }
+
+      vscode.postMessage({
+        command: "getExperiences",
+        apiKey: get("apiKey"),
+        accountId: get("accountId"),
+        projectId: selectedProject,
+        search,
+      });
+    }
   };
 
   wrapper.appendChild(input);
   wrapper.appendChild(list);
   container.appendChild(wrapper);
 
-  renderList(items);
+  renderList(allItems);
 }
-
 
 let pendingSubmit = null;
 
@@ -380,4 +409,46 @@ function confirmSubmit() {
     pendingSubmit();
   }
   closeModal();
+}
+
+document.getElementById("projectSearch").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    triggerProjectSearch();
+  }
+});
+
+document.getElementById("experienceSearch").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    triggerExperienceSearch();
+  }
+});
+
+function triggerProjectSearch() {
+  const search = document.getElementById("projectSearch").value.trim();
+
+  vscode.postMessage({
+    command: "getProjects",
+    apiKey: get("apiKey"),
+    accountId: get("accountId"),
+    search, // ✅ payload
+  });
+}
+
+function triggerExperienceSearch() {
+  const search = document.getElementById("experienceSearch").value.trim();
+
+  if (!selectedProject) {
+    showToast("Select project first", "error");
+    return;
+  }
+
+  vscode.postMessage({
+    command: "getExperiences",
+    apiKey: get("apiKey"),
+    accountId: get("accountId"),
+    projectId: selectedProject,
+    search, // ✅ payload
+  });
 }
