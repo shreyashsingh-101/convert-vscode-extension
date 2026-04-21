@@ -6,12 +6,6 @@ async function request(
   method: string = "POST",
   body?: object,
 ) {
-  console.log(`🌐 ${method} ${url}`);
-
-  if (body) {
-    console.log("📦 Request Body:", JSON.stringify(body, null, 2));
-  }
-
   const res = await fetch(url, {
     method,
     headers: {
@@ -23,24 +17,25 @@ async function request(
 
   const text = await res.text();
 
-  console.log("📥 Raw Response:", text);
-
   if (!res.ok) {
-    console.error("❌ API Error:", res.status, text);
     throw new Error(`API error ${res.status}: ${text}`);
   }
 
   try {
-    const json = JSON.parse(text);
-    console.log("✅ Parsed Response:", json);
-    return json;
+    return JSON.parse(text);
   } catch {
-    console.warn("⚠️ Non-JSON response");
     return text;
   }
 }
 
 export const convertApi = {
+  getProject: (apiKey: string, accountId: string, projectId: string) =>
+    request(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}`,
+      apiKey,
+      "GET",
+    ),
+
   getProjects: (apiKey: string, accountId: string, search?: string) =>
     request(`${BASE_URL}/accounts/${accountId}/projects`, apiKey, "POST", {
       search: search || "",
@@ -85,7 +80,7 @@ export const convertApi = {
       payload,
     ),
 
-  updateVariation: async (
+  updateVariation: (
     apiKey: string,
     accountId: string,
     projectId: string,
@@ -105,17 +100,11 @@ export const convertApi = {
       ],
     };
 
-    console.log("📤 Sending payload:", JSON.stringify(body, null, 2));
-
-    const res = await request(
+    return request(
       `${BASE_URL}/accounts/${accountId}/projects/${projectId}/experiences/${experienceId}/variations/${variationId}/update`,
       apiKey,
       "PUT",
       body,
     );
-
-    console.log("✅ API Response:", res);
-
-    return res;
   },
 };

@@ -1,7 +1,22 @@
 import * as vscode from "vscode";
+import { readFileSync } from "fs";
 import { handleMessage } from "./utils/messageHandler";
+import {
+  authenticate,
+  clearToken,
+  getClientId,
+  getStoredAccounts,
+  getToken,
+} from "./auth/convertAuth";
 
-// ─── File Store ─────────────────────────────────────────────
+interface ConvertConfig {
+  apiKey?: string | null;
+  accountId?: string;
+  projectId?: string | null;
+  experienceId?: string | null;
+  variationId?: string | null;
+  authMode?: "apikey" | "oauth";
+}
 
 class FileStore {
   private files: vscode.Uri[] = [];
@@ -37,14 +52,12 @@ class FileStore {
   }
 }
 
-// ─── Drop Tree View ─────────────────────────────────────────
-
 class DropTreeProvider
   implements
     vscode.TreeDataProvider<vscode.TreeItem>,
     vscode.TreeDragAndDropController<vscode.TreeItem>
 {
-  readonly dragMimeTypes: string[] = []; // 🔥 important
+  readonly dragMimeTypes: string[] = [];
   readonly dropMimeTypes: string[] = ["text/uri-list"];
 
   constructor(private store: FileStore) {}
@@ -54,19 +67,16 @@ class DropTreeProvider
   }
 
   getChildren(): vscode.TreeItem[] {
-    return [new vscode.TreeItem("📂 Drop files here")];
+    return [new vscode.TreeItem("Drop JS/CSS files here")];
   }
 
   async handleDrop(
     _target: vscode.TreeItem | undefined,
     dataTransfer: vscode.DataTransfer,
   ) {
-    console.log("🎯 Drop triggered");
-
     const raw = dataTransfer.get("text/uri-list");
 
     if (!raw) {
-      console.log("❌ No URI list found");
       return;
     }
 
@@ -82,7 +92,6 @@ class DropTreeProvider
     for (const uri of uris) {
       const path = uri.fsPath.toLowerCase();
 
-      // ✅ allow only .js and .css
       if (path.endsWith(".js") || path.endsWith(".css")) {
         valid.push(uri);
       } else {
@@ -90,7 +99,6 @@ class DropTreeProvider
       }
     }
 
-    // ❌ Reject invalid files
     if (invalid.length) {
       vscode.window.showWarningMessage(
         `Only JS/CSS allowed. Ignored: ${invalid
@@ -99,17 +107,11 @@ class DropTreeProvider
       );
     }
 
-    if (!valid.length) {
-      console.log("⚠️ No valid files to add");
-      return;
+    if (valid.length) {
+      this.store.add(valid);
     }
-
-    console.log("✅ Valid files:", valid.length);
-
-    this.store.add(valid);
   }
 }
-// ─── Webview Provider ───────────────────────────────────────
 
 class SidebarProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
@@ -127,23 +129,14 @@ class SidebarProvider implements vscode.WebviewViewProvider {
 
     view.webview.options = {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.extensionUri, "media"),
-      ],
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")],
     };
 
     view.webview.html = this.getHtml(view.webview);
 
     setTimeout(() => {
-      const saved = this.context.globalState.get("convertConfig");
-
-      console.log("📤 Sending restore:", saved);
-
-      view.webview.postMessage({
-        command: "restore",
-        data: saved,
-      });
-    }, 500); // increase delay slightly
+      void this.restoreState(view.webview);
+    }, 100);
 
     view.webview.onDidReceiveMessage((msg) => {
       if (msg.type === "remove") {
@@ -156,7 +149,7 @@ class SidebarProvider implements vscode.WebviewViewProvider {
         return;
       }
 
-      handleMessage(msg, view.webview, this.store, this.context);
+      void handleMessage(msg, view.webview, this.store, this.context);
     });
 
     this.pushFiles(this.store.getAll());
@@ -172,6 +165,29 @@ class SidebarProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  private async restoreState(webview: vscode.Webview) {
+    const saved =
+      this.context.globalState.get<ConvertConfig>("convertConfig") ?? {};
+    const oauthToken = await getToken(this.context);
+    const clientId = await getClientId(this.context);
+    const storedAccounts = oauthToken
+      ? await getStoredAccounts(this.context)
+      : [];
+
+    await webview.postMessage({
+      command: "restore",
+      data: {
+        ...saved,
+        authMode: oauthToken ? "oauth" : "apikey",
+        clientId: clientId ?? "",
+        accounts: storedAccounts.map((account) => ({
+          id: String(account.account_id),
+          name: account.name,
+        })),
+      },
+    });
+  }
+
   private getHtml(webview: vscode.Webview) {
     const htmlPath = vscode.Uri.joinPath(
       this.extensionUri,
@@ -179,7 +195,7 @@ class SidebarProvider implements vscode.WebviewViewProvider {
       "index.html",
     );
 
-    let html = require("fs").readFileSync(htmlPath.fsPath, "utf-8");
+    let html = readFileSync(htmlPath.fsPath, "utf-8");
 
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, "media", "script.js"),
@@ -196,11 +212,8 @@ class SidebarProvider implements vscode.WebviewViewProvider {
   }
 }
 
-// ─── Activate ───────────────────────────────────────────────
-
 export function activate(context: vscode.ExtensionContext) {
   const store = new FileStore();
-
   const dropProvider = new DropTreeProvider(store);
 
   const treeView = vscode.window.createTreeView("convertDropZone", {
@@ -217,6 +230,25 @@ export function activate(context: vscode.ExtensionContext) {
       },
     }),
     treeView,
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("convert.login", async () => {
+      try {
+        await authenticate(context);
+        vscode.window.showInformationMessage("Connected to Convert!");
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`Login failed: ${message}`);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("convert.logout", async () => {
+      await clearToken(context);
+      vscode.window.showInformationMessage("Disconnected from Convert.");
+    }),
   );
 }
 

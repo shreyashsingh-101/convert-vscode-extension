@@ -1,60 +1,41 @@
 # Convert VSCode Extension
 
-A powerful Visual Studio Code extension to **push JavaScript & CSS changes directly to Convert experiments** — eliminating manual copy-paste and speeding up A/B testing workflows.
+A Visual Studio Code extension for uploading JavaScript and CSS files directly to Convert.com experiments and global project code.
 
----
+## Features
 
-## ✨ Features
+- Connect with a Convert API key and manual account ID.
+- Connect with Convert OAuth using a configurable OAuth client ID.
+- Select account, project, experiment, and variation from searchable dropdowns.
+- Push code to a selected variation or to Global JS/CSS.
+- Drag and drop `.js` and `.css` files from VS Code.
+- Persist and restore saved configuration across reloads.
+- Clear all local extension state from the sidebar.
+- Show the next CDN update time after a successful upload.
 
-- 🔗 Connect using Convert API Key  
-- 📂 Select **Account → Project → Experiment → Variation**  
-- 🧠 Smart **searchable dropdowns** for large datasets  
-- 📥 Drag & drop JS/CSS files directly from VS Code Explorer  
-- 🎯 Clean, minimal UI with native VS Code feel  
+## How It Works
 
----
+1. Enter an API key and account ID, or save a Convert OAuth client ID and log in with Convert.
+2. Click **Load Projects**.
+3. Select a project, experiment, and variation.
+4. Drag `.js` or `.css` files into the extension drop zone.
+5. Click **Push to Convert**.
+6. After a successful upload, the extension shows the next CDN update time when Convert returns one.
 
-## 🧰 Tech Stack
+## Local Development
 
-- **TypeScript** – Extension logic  
-- **VS Code Extension API** – UI + lifecycle  
-- **Webview (HTML/CSS/JS)** – Custom UI  
-- **Convert API v2** – Experiment integration  
+1. Clone the repository.
+2. Run `npm install`.
+3. Run `npm run compile`.
+4. Press `F5` in VS Code to launch an Extension Development Host.
+5. Open **Convert VSCode Extension** from the Activity Bar.
 
----
+## Notes
 
-## 📸 How It Works
+- OAuth client IDs are stored in VS Code secret storage.
+- OAuth tokens and account lists are stored in VS Code secret storage.
+- API key configuration is restored from extension global state.
 
-1. Enter your **Convert API Key & Account ID**
-2. Load and select:
-   - Project
-   - Experiment
-   - Variation
-3. Drag `.js` / `.css` files into the extension
-4. Click **Push to Convert**
-5. 🚀 Your changes are instantly applied
-
----
-
-## 🚀 Getting Started for Local Developments
-
-1. Clone the repo
-2. Run `npm install` to install dependencies
-3. Press `F5` to launch the extension in a new VS Code window
-4. Open the **Convert VSCode Extension** from the sidebar
-
-## 🤝 Contributing
-
-Contributions are welcome!
-Please open an issue or submit a pull request.
-
-## 📄 License
+## License
 
 MIT License.
-
-## ⭐ Support
-
-If you found this useful:
-
-👉 Star the repo
-👉 Share with your team
