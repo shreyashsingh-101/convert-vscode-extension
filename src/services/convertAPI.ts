@@ -28,6 +28,28 @@ async function request(
   }
 }
 
+async function requestMultipart(url: string, apiKey: string, body: FormData) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body,
+  });
+
+  const text = await res.text();
+
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 export const convertApi = {
   getProject: (apiKey: string, accountId: string, projectId: string) =>
     request(
@@ -62,6 +84,31 @@ export const convertApi = {
   ) =>
     request(
       `${BASE_URL}/accounts/${accountId}/projects/${projectId}/experiences/${experienceId}?expand[]=variations`,
+      apiKey,
+      "GET",
+    ),
+
+  getExperienceDetails: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    experienceId: string,
+  ) =>
+    request(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}/experiences/${experienceId}`,
+      apiKey,
+      "GET",
+    ),
+
+  getVariationDetails: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    experienceId: string,
+    _variationId: string,
+  ) =>
+    request(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}/experiences/${experienceId}?expand[]=variations.changes`,
       apiKey,
       "GET",
     ),
@@ -104,6 +151,25 @@ export const convertApi = {
       `${BASE_URL}/accounts/${accountId}/projects/${projectId}/experiences/${experienceId}/variations/${variationId}/update`,
       apiKey,
       "PUT",
+      body,
+    );
+  },
+
+  uploadImage: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    imageName: string,
+    image: Uint8Array,
+  ) => {
+    const body = new FormData();
+
+    body.append("image_name", imageName);
+    body.append("image", new Blob([image]), imageName);
+
+    return requestMultipart(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}/images/add`,
+      apiKey,
       body,
     );
   },

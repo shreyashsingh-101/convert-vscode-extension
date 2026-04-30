@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
 import { readFileSync } from "fs";
-import { handleMessage } from "./utils/messageHandler";
+import {
+  handleEditorDocumentSave,
+  handleMessage,
+} from "./utils/messageHandler";
 import {
   authenticate,
   clearToken,
@@ -26,17 +29,17 @@ class FileStore {
     const existing = new Set(this.files.map((f) => f.fsPath));
     const newUris = uris.filter((u) => !existing.has(u.fsPath));
     this.files.push(...newUris);
-    this.notify();
+    this.notify(uris);
   }
 
   remove(fsPath: string) {
     this.files = this.files.filter((f) => f.fsPath !== fsPath);
-    this.notify();
+    this.notify([]);
   }
 
   clear() {
     this.files = [];
-    this.notify();
+    this.notify([]);
   }
 
   getAll(): vscode.Uri[] {
@@ -47,8 +50,8 @@ class FileStore {
     this.listeners.push(cb);
   }
 
-  private notify() {
-    this.listeners.forEach((cb) => cb([...this.files]));
+  private notify(uris: vscode.Uri[]) {
+    this.listeners.forEach((cb) => cb([...uris]));
   }
 }
 
@@ -151,8 +154,6 @@ class SidebarProvider implements vscode.WebviewViewProvider {
 
       void handleMessage(msg, view.webview, this.store, this.context);
     });
-
-    this.pushFiles(this.store.getAll());
   }
 
   private pushFiles(uris: vscode.Uri[]) {
@@ -230,6 +231,12 @@ export function activate(context: vscode.ExtensionContext) {
       },
     }),
     treeView,
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      void handleEditorDocumentSave(document);
+    }),
   );
 
   context.subscriptions.push(

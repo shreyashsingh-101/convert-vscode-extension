@@ -18,6 +18,13 @@
 
     <div id="toast" class="toast"></div>
 
+    <div class="session-shell">
+      <div id="sessionTabs" class="session-tabs"></div>
+      <div class="active-session">
+        <span id="activeSessionName">Project 1</span>
+      </div>
+    </div>
+
     <!-- Auth Section -->
     <div id="apiKeySection" class="section">
       <label for="apiKey">API Key</label>
@@ -44,42 +51,124 @@
       <div id="accounts"></div>
     </div>
 
-    <button onclick="loadProjects()">Load Projects</button>
+    <button id="loadProjectsBtn" onclick="loadProjects()">Load Projects</button>
 
-    <div class="section">
+    <div id="projectSection" class="section">
       <label>Project</label>
       <div id="projects"></div>
     </div>
 
-    <div class="section">
+    <div id="imageUploadView" class="image-upload-view hidden">
+      <h3>Image Upload</h3>
+
+      <div class="image-mode-toggle">
+        <button id="singleImageModeBtn" onclick="setImageUploadMode('single')">
+          Single
+        </button>
+        <button
+          id="multipleImageModeBtn"
+          onclick="setImageUploadMode('multiple')"
+        >
+          Multiple
+        </button>
+      </div>
+
+      <div id="singleImageView">
+        <div class="button-row">
+          <button id="selectImageBtn" onclick="selectImage()">Select Image</button>
+          <button id="uploadImageBtn" onclick="uploadImage()">Upload Image</button>
+        </div>
+
+        <div id="selectedImageSummary" class="image-selected muted">
+          No image selected
+        </div>
+
+        <div class="section">
+          <label for="imageName">Image Name</label>
+          <input id="imageName" placeholder="Default: selected file name" />
+        </div>
+
+        <button class="secondary-button image-clear" onclick="requestClearImageUpload('single')">
+          Clear
+        </button>
+
+        <div id="imageUploadResult" class="image-result hidden">
+          <div class="image-result-label">CDN URL</div>
+          <div id="imageCdnUrl" class="image-result-url"></div>
+        </div>
+      </div>
+
+      <div id="multipleImageView" class="hidden">
+        <div class="button-row">
+          <button id="selectImagesBtn" onclick="selectImages()">
+            Select Images
+          </button>
+          <button id="uploadImagesBtn" onclick="uploadImages()">
+            Upload Selected
+          </button>
+        </div>
+
+        <button class="secondary-button image-clear" onclick="requestClearImageUpload('multiple')">
+          Clear
+        </button>
+
+        <div id="multipleImageTable" class="image-table-wrap"></div>
+      </div>
+    </div>
+
+    <div id="experienceSection" class="section">
       <label>Experiment</label>
       <div id="experiences"></div>
     </div>
 
-    <div class="section">
+    <div id="variationSection" class="section">
       <label>Variation</label>
       <div id="variations"></div>
     </div>
 
-    <div class="section compact-section">
+    <div id="clearSection" class="section compact-section">
       <button id="clearAllBtn" class="secondary-button" onclick="clearAll()">
         Clear All
       </button>
     </div>
 
-    <hr />
+    <hr class="workflow-only" />
 
-    <h3>Files</h3>
+    <div id="editorSection">
+      <h3>Editor</h3>
 
-    <div id="filesList" class="files-list">
-      <div class="no-files">Drag files into "Drop Files Here" panel below</div>
+      <div class="editor-status">
+        <div id="editorContext">Editing: No project / No variation</div>
+        <div id="editorFiles">Files: not opened yet</div>
+      </div>
+
+      <div class="button-row">
+        <button id="openEditorBtn" onclick="openEditor()">Open Editor</button>
+        <button
+          id="pushEditorBtn"
+          class="secondary-button"
+          onclick="pushEditor()"
+        >
+          Push Editor Changes
+        </button>
+      </div>
     </div>
 
-    <div class="section">
-      <button id="submitBtn" onclick="submit()">
-        <span id="btnText">Push to Convert</span>
-        <span id="btnLoader" class="loader" style="display: none"></span>
-      </button>
+    <hr class="workflow-only" />
+
+    <div id="filesSection">
+      <h3>Files</h3>
+
+      <div id="filesList" class="files-list">
+        <div class="no-files">Drag files into "Drop Files Here" panel below</div>
+      </div>
+
+      <div class="section">
+        <button id="submitBtn" onclick="submit()">
+          <span id="btnText">Push to Convert</span>
+          <span id="btnLoader" class="loader" style="display: none"></span>
+        </button>
+      </div>
     </div>
 
     <footer>
@@ -98,6 +187,39 @@
         <div class="modal-actions">
           <button onclick="confirmSubmit()">Confirm</button>
           <button onclick="closeModal()" class="secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="clearModal" class="modal hidden">
+      <div class="modal-content">
+        <h3>Clear</h3>
+
+        <p id="clearText">Choose what to clear for the active session.</p>
+
+        <div class="modal-actions stacked-actions">
+          <button onclick="clearProjectDetails()">Clear Project Details</button>
+          <button onclick="clearAllStoredData()" class="danger">
+            Clear All Stored Data
+          </button>
+          <button onclick="closeClearModal()" class="secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="imageClearModal" class="modal hidden">
+      <div class="modal-content">
+        <h3>Clear Images</h3>
+
+        <p id="imageClearText">Clear selected image upload data?</p>
+
+        <div class="modal-actions">
+          <button onclick="confirmClearImageUpload()" class="danger">
+            Clear
+          </button>
+          <button onclick="closeImageClearModal()" class="secondary">
+            Cancel
+          </button>
         </div>
       </div>
     </div>
