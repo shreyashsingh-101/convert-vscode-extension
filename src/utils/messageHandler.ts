@@ -14,6 +14,10 @@ type WebviewLike = Pick<vscode.Webview, "postMessage">;
 
 interface EditorSession {
   sessionId: string;
+  accountId: string;
+  projectId: string;
+  experienceId: string;
+  variationId: string;
   jsUri: vscode.Uri;
   cssUri: vscode.Uri;
   js: string;
@@ -225,6 +229,33 @@ function getImageMetadata(uri: vscode.Uri, size = 0) {
   };
 }
 
+function validateProjectSelection(
+  accountId: string,
+  projectId: string,
+  experienceId?: string,
+  variationId?: string,
+): void {
+  if (!accountId) {
+    throw new Error("Missing Account ID");
+  }
+
+  if (!projectId) {
+    throw new Error("Project not selected");
+  }
+
+  if (experienceId !== undefined && !experienceId) {
+    throw new Error("Experiment not selected");
+  }
+
+  if (variationId !== undefined && !variationId) {
+    throw new Error("Variation not selected");
+  }
+}
+
+function isSupportedImagePath(filePath: string): boolean {
+  return /\.(jpe?g|png|gif|webp|svg)$/i.test(filePath);
+}
+
 async function pickImages(canSelectMany: boolean): Promise<vscode.Uri[]> {
   return (
     (await vscode.window.showOpenDialog({
@@ -249,14 +280,26 @@ async function uploadImageFromPath(
   imageName: string,
 ) {
   const imageUri = vscode.Uri.file(imagePath);
+  const metadata = getImageMetadata(imageUri);
+
+  if (!isSupportedImagePath(metadata.fileName)) {
+    throw new Error("Only JPG, PNG, GIF, WebP, and SVG images are supported.");
+  }
+
   const imageContent = await vscode.workspace.fs.readFile(imageUri);
+
+  if (!imageContent.byteLength) {
+    throw new Error("Image file is empty.");
+  }
 
   if (imageContent.byteLength > 2 * 1024 * 1024) {
     throw new Error("Image is too large. Max size is 2MB.");
   }
 
-  const metadata = getImageMetadata(imageUri, imageContent.byteLength);
-  const cleanName = imageName.trim() || metadata.baseName;
+  const requestedName = imageName.trim();
+  const cleanName = requestedName
+    ? requestedName.replace(/(\.[^.\\/]+)$/i, "")
+    : metadata.baseName;
   const finalName = `${cleanName}${metadata.extension}`;
   const response = await convertApi.uploadImage(
     token,
@@ -331,6 +374,40 @@ async function closeEditorSessionFiles(sessionId: string): Promise<void> {
   console.log(`[Convert] Closed editor files for session ${sessionId}`);
 }
 
+function getSessionEditorPaths(session: EditorSession): Set<string> {
+  return new Set([session.jsUri.fsPath, session.cssUri.fsPath]);
+}
+
+function getOpenEditorTabPaths(): Set<string> {
+  const paths = new Set<string>();
+
+  for (const group of vscode.window.tabGroups.all) {
+    for (const tab of group.tabs) {
+      if (tab.input instanceof vscode.TabInputText) {
+        paths.add(tab.input.uri.fsPath);
+      }
+    }
+  }
+
+  return paths;
+}
+
+function hasOpenEditorSessionTabs(session: EditorSession): boolean {
+  const openPaths = getOpenEditorTabPaths();
+  const targetPaths = getSessionEditorPaths(session);
+
+  return [...targetPaths].every((path) => openPaths.has(path));
+}
+
+function getDirtyEditorFileNames(session: EditorSession): string[] {
+  const targetPaths = getSessionEditorPaths(session);
+
+  return vscode.workspace.textDocuments
+    .filter((document) => targetPaths.has(document.uri.fsPath))
+    .filter((document) => document.isDirty)
+    .map((document) => getFileName(document.uri));
+}
+
 async function closeConvertEditorTabs(): Promise<void> {
   const convertDir = vscode.Uri.joinPath(getWorkspaceRoot(), ".convert").fsPath;
   const normalizedConvertDir = convertDir.toLowerCase();
@@ -357,6 +434,27 @@ async function closeConvertEditorTabs(): Promise<void> {
   }
 
   editorSessions.clear();
+}
+
+async function clearConvertTempFiles(): Promise<void> {
+  const convertDir = vscode.Uri.joinPath(getWorkspaceRoot(), ".convert");
+
+  try {
+    await vscode.workspace.fs.delete(convertDir, {
+      recursive: true,
+      useTrash: false,
+    });
+  } catch (err: unknown) {
+    if (
+      err instanceof vscode.FileSystemError &&
+      err.code === "FileNotFound"
+    ) {
+      return;
+    }
+
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[Convert] Could not clear .convert temp files: ${message}`);
+  }
 }
 
 export async function handleEditorDocumentSave(
@@ -420,6 +518,48 @@ function getNextInvalidationTimestamp(project: unknown): number {
     asTimestamp(nextInvalidation?.js),
     asTimestamp(nextInvalidation?.data),
   );
+}
+
+async function collectCodeFiles(files: vscode.Uri[]): Promise<{
+  jsFiles: string[];
+  cssFiles: string[];
+}> {
+  const jsFiles: string[] = [];
+  const cssFiles: string[] = [];
+
+  for (const fileUri of files) {
+    const filePath = fileUri.fsPath.toLowerCase();
+
+    if (!filePath.endsWith(".js") && !filePath.endsWith(".css")) {
+      throw new Error(`Invalid file type: ${fileUri.fsPath}`);
+    }
+
+    const stat = await vscode.workspace.fs.stat(fileUri);
+
+    if (stat.type !== vscode.FileType.File) {
+      throw new Error(`Not a file: ${fileUri.fsPath}`);
+    }
+
+    if (stat.size === 0) {
+      throw new Error(`File is empty: ${fileUri.fsPath}`);
+    }
+
+    if (stat.size > 200 * 1024) {
+      throw new Error(`File too large (>200KB): ${fileUri.fsPath}`);
+    }
+
+    const text = await readTextFile(fileUri);
+    const fileName = getFileName(fileUri);
+    const content = `/* ${fileName} */\n${text}`;
+
+    if (filePath.endsWith(".js")) {
+      jsFiles.push(content);
+    } else {
+      cssFiles.push(content);
+    }
+  }
+
+  return { jsFiles, cssFiles };
 }
 
 async function postCdnUpdateToast(
@@ -623,7 +763,13 @@ export async function handleMessage(
       }
 
       case "closeEditor": {
-        await closeEditorSessionFiles(sanitizeSessionId(asString(message.sessionId)));
+        const sessionId = sanitizeSessionId(asString(message.sessionId));
+
+        await closeEditorSessionFiles(sessionId);
+        await webview.postMessage({
+          command: "editorClosed",
+          sessionId,
+        });
         break;
       }
 
@@ -638,27 +784,19 @@ export async function handleMessage(
         const variationName = asString(message.variationName) || variationId;
         const isGlobal = variationId === "global";
 
-        if (!accountId) {
-          throw new Error("Missing Account ID");
-        }
-
-        if (!projectId) {
-          throw new Error("Project not selected");
-        }
-
-        if (!experienceId) {
-          throw new Error("Experiment not selected");
-        }
-
-        if (!variationId) {
-          throw new Error("Variation not selected");
-        }
+        validateProjectSelection(
+          accountId,
+          projectId,
+          experienceId,
+          variationId,
+        );
 
         console.log(
           `[Convert] Opening editor files for session ${sessionId} (${isGlobal ? "global" : `variation ${variationId}`})`,
         );
 
         await closeConvertEditorTabs();
+        await clearConvertTempFiles();
 
         const details = isGlobal
           ? await convertApi.getExperienceDetails(
@@ -692,6 +830,10 @@ export async function handleMessage(
 
         editorSessions.set(sessionId, {
           sessionId,
+          accountId,
+          projectId,
+          experienceId,
+          variationId,
           jsUri,
           cssUri,
           js: code.js,
@@ -715,25 +857,10 @@ export async function handleMessage(
         break;
       }
 
-      case "selectImage": {
-        const picked = await pickImages(false);
-        const imageUri = picked[0];
-
-        if (!imageUri) {
-          await webview.postMessage({ command: "imageSelectionCancelled" });
-          break;
-        }
-
-        const stat = await vscode.workspace.fs.stat(imageUri);
-        await webview.postMessage({
-          command: "imageSelected",
-          image: getImageMetadata(imageUri, stat.size),
-        });
-        break;
-      }
-
+      case "selectImage":
       case "selectImages": {
-        const picked = await pickImages(true);
+        const multiSelect = message.command === "selectImages";
+        const picked = await pickImages(multiSelect);
 
         if (!picked.length) {
           await webview.postMessage({ command: "imageSelectionCancelled" });
@@ -747,7 +874,7 @@ export async function handleMessage(
         }
 
         await webview.postMessage({
-          command: "imagesSelected",
+          command: images.length === 1 ? "imageSelected" : "imagesSelected",
           images,
         });
         break;
@@ -760,13 +887,7 @@ export async function handleMessage(
         const imagePath = asString(message.imagePath);
         const rowId = asString(message.rowId);
 
-        if (!accountId) {
-          throw new Error("Missing Account ID");
-        }
-
-        if (!projectId) {
-          throw new Error("Project not selected");
-        }
+        validateProjectSelection(accountId, projectId);
 
         if (!imagePath) {
           throw new Error("Select an image first");
@@ -806,40 +927,62 @@ export async function handleMessage(
         const variationId = asString(message.variationId);
         const isGlobal = variationId === "global";
         const session = editorSessions.get(sessionId);
-        const convertDir = vscode.Uri.joinPath(getWorkspaceRoot(), ".convert");
-        const jsUri =
-          session?.jsUri ?? vscode.Uri.joinPath(convertDir, `${sessionId}.js`);
-        const cssUri =
-          session?.cssUri ?? vscode.Uri.joinPath(convertDir, `${sessionId}.css`);
-        let jsCode = "";
-        let cssCode = "";
 
-        if (!accountId) {
-          throw new Error("Missing Account ID");
+        validateProjectSelection(
+          accountId,
+          projectId,
+          experienceId,
+          variationId,
+        );
+
+        if (!session) {
+          await webview.postMessage({
+            command: "editorClosed",
+            sessionId,
+          });
+          throw new Error("Open editor files before pushing editor changes.");
         }
 
-        if (!projectId) {
-          throw new Error("Project not selected");
+        if (!hasOpenEditorSessionTabs(session)) {
+          editorSessions.delete(sessionId);
+          await webview.postMessage({
+            command: "editorClosed",
+            sessionId,
+          });
+          throw new Error(
+            "Editor session is not active. Open the editor again before pushing.",
+          );
         }
 
-        if (!experienceId) {
-          throw new Error("Experiment not selected");
+        if (
+          session.accountId !== accountId ||
+          session.projectId !== projectId ||
+          session.experienceId !== experienceId ||
+          session.variationId !== variationId
+        ) {
+          editorSessions.delete(sessionId);
+          await webview.postMessage({
+            command: "editorClosed",
+            sessionId,
+          });
+          throw new Error(
+            "Editor files are stale. Open the editor again for the selected project and variation.",
+          );
         }
 
-        if (!variationId) {
-          throw new Error("Variation not selected");
+        const dirtyFiles = getDirtyEditorFileNames(session);
+
+        if (dirtyFiles.length) {
+          throw new Error(
+            `Save editor files before pushing: ${dirtyFiles.join(", ")}`,
+          );
         }
 
-        try {
-          jsCode = await readTextFile(jsUri);
-        } catch {
-          console.warn(`[Convert] Missing JS editor file for ${sessionId}`);
-        }
+        const jsCode = await readTextFile(session.jsUri);
+        const cssCode = await readTextFile(session.cssUri);
 
-        try {
-          cssCode = await readTextFile(cssUri);
-        } catch {
-          console.warn(`[Convert] Missing CSS editor file for ${sessionId}`);
+        if (!jsCode.trim() && !cssCode.trim()) {
+          throw new Error("Editor files are empty. Add JS or CSS before pushing.");
         }
 
         console.log(
@@ -871,10 +1014,8 @@ export async function handleMessage(
           );
         }
 
-        if (session) {
-          session.js = jsCode;
-          session.css = cssCode;
-        }
+        session.js = jsCode;
+        session.css = cssCode;
 
         await webview.postMessage({
           command: "success",
@@ -886,27 +1027,20 @@ export async function handleMessage(
 
       case "submitGlobal": {
         const token = await resolveToken(message, context);
+        const accountId = asString(message.accountId);
+        const projectId = asString(message.projectId);
+        const experienceId = asString(message.experienceId);
         const files = getUploadFiles(message, fileStore);
+
+        validateProjectSelection(accountId, projectId, experienceId);
 
         if (!files.length) {
           throw new Error("No files selected");
         }
 
-        let jsCode = "";
-        let cssCode = "";
-
-        for (const fileUri of files) {
-          const content = await vscode.workspace.fs.readFile(fileUri);
-          const text = Buffer.from(content).toString("utf-8");
-          const fileName = fileUri.fsPath.split(/[\\/]/).pop();
-          const filePath = fileUri.fsPath.toLowerCase();
-
-          if (filePath.endsWith(".js")) {
-            jsCode += `\n\n/* ${fileName} */\n${text}`;
-          } else if (filePath.endsWith(".css")) {
-            cssCode += `\n\n/* ${fileName} */\n${text}`;
-          }
-        }
+        const { jsFiles, cssFiles } = await collectCodeFiles(files);
+        let jsCode = jsFiles.join("\n\n");
+        let cssCode = cssFiles.join("\n\n");
 
         if (!jsCode && !cssCode) {
           throw new Error("No JS or CSS content to upload");
@@ -916,9 +1050,9 @@ export async function handleMessage(
           const existing = extractGlobalCode(
             await convertApi.getExperienceDetails(
               token,
-              asString(message.accountId),
-              asString(message.projectId),
-              asString(message.experienceId),
+              accountId,
+              projectId,
+              experienceId,
             ),
           );
 
@@ -928,9 +1062,9 @@ export async function handleMessage(
 
         await convertApi.updateExperience(
           token,
-          asString(message.accountId),
-          asString(message.projectId),
-          asString(message.experienceId),
+          accountId,
+          projectId,
+          experienceId,
           {
             global_js: jsCode,
             global_css: cssCode,
@@ -946,8 +1080,8 @@ export async function handleMessage(
         await postCdnUpdateToast(
           webview,
           token,
-          asString(message.accountId),
-          asString(message.projectId),
+          accountId,
+          projectId,
         );
         break;
       }
@@ -959,21 +1093,12 @@ export async function handleMessage(
         const experienceId = asString(message.experienceId);
         const variationId = asString(message.variationId);
 
-        if (!accountId) {
-          throw new Error("Missing Account ID");
-        }
-
-        if (!projectId) {
-          throw new Error("Project not selected");
-        }
-
-        if (!experienceId) {
-          throw new Error("Experiment not selected");
-        }
-
-        if (!variationId) {
-          throw new Error("Variation not selected");
-        }
+        validateProjectSelection(
+          accountId,
+          projectId,
+          experienceId,
+          variationId,
+        );
 
         const files = getUploadFiles(message, fileStore);
 
@@ -981,32 +1106,7 @@ export async function handleMessage(
           throw new Error("No files selected");
         }
 
-        const jsFiles: string[] = [];
-        const cssFiles: string[] = [];
-
-        for (const fileUri of files) {
-          const filePath = fileUri.fsPath.toLowerCase();
-
-          if (!filePath.endsWith(".js") && !filePath.endsWith(".css")) {
-            throw new Error(`Invalid file type: ${fileUri.fsPath}`);
-          }
-
-          const stat = await vscode.workspace.fs.stat(fileUri);
-
-          if (stat.size > 200 * 1024) {
-            throw new Error(`File too large (>200KB): ${fileUri.fsPath}`);
-          }
-
-          const content = await vscode.workspace.fs.readFile(fileUri);
-          const text = Buffer.from(content).toString("utf-8");
-          const fileName = fileUri.fsPath.split(/[\\/]/).pop();
-
-          if (filePath.endsWith(".js")) {
-            jsFiles.push(`/* ${fileName} */\n${text}`);
-          } else {
-            cssFiles.push(`/* ${fileName} */\n${text}`);
-          }
-        }
+        const { jsFiles, cssFiles } = await collectCodeFiles(files);
 
         const currentCode =
           !jsFiles.length || !cssFiles.length

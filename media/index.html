@@ -61,59 +61,20 @@
     <div id="imageUploadView" class="image-upload-view hidden">
       <h3>Image Upload</h3>
 
-      <div class="image-mode-toggle">
-        <button id="singleImageModeBtn" onclick="setImageUploadMode('single')">
-          Single
+      <div class="button-row">
+        <button id="selectImagesBtn" onclick="selectImages()">
+          Select Images
         </button>
-        <button
-          id="multipleImageModeBtn"
-          onclick="setImageUploadMode('multiple')"
-        >
-          Multiple
+        <button id="uploadImagesBtn" onclick="uploadImages()">
+          Upload Selected
         </button>
       </div>
 
-      <div id="singleImageView">
-        <div class="button-row">
-          <button id="selectImageBtn" onclick="selectImage()">Select Image</button>
-          <button id="uploadImageBtn" onclick="uploadImage()">Upload Image</button>
-        </div>
+      <button class="secondary-button image-clear" onclick="requestClearImageUpload()">
+        Clear All
+      </button>
 
-        <div id="selectedImageSummary" class="image-selected muted">
-          No image selected
-        </div>
-
-        <div class="section">
-          <label for="imageName">Image Name</label>
-          <input id="imageName" placeholder="Default: selected file name" />
-        </div>
-
-        <button class="secondary-button image-clear" onclick="requestClearImageUpload('single')">
-          Clear
-        </button>
-
-        <div id="imageUploadResult" class="image-result hidden">
-          <div class="image-result-label">CDN URL</div>
-          <div id="imageCdnUrl" class="image-result-url"></div>
-        </div>
-      </div>
-
-      <div id="multipleImageView" class="hidden">
-        <div class="button-row">
-          <button id="selectImagesBtn" onclick="selectImages()">
-            Select Images
-          </button>
-          <button id="uploadImagesBtn" onclick="uploadImages()">
-            Upload Selected
-          </button>
-        </div>
-
-        <button class="secondary-button image-clear" onclick="requestClearImageUpload('multiple')">
-          Clear
-        </button>
-
-        <div id="multipleImageTable" class="image-table-wrap"></div>
-      </div>
+      <div id="multipleImageTable" class="image-table-wrap"></div>
     </div>
 
     <div id="experienceSection" class="section">
@@ -173,7 +134,7 @@
 
     <footer>
       <p>
-        By <a href="https://github.com/shreyashsingh-101" target="_blank">SS</a>. <a href="https://github.com/shreyashsingh-101/convert-vscode-extension" target="_blank">v0.0.4</a>
+        By <a href="https://github.com/shreyashsingh-101" target="_blank">SS</a>. <a href="https://github.com/shreyashsingh-101/convert-vscode-extension" target="_blank">v0.0.5</a>
       </p>
     </footer>
 

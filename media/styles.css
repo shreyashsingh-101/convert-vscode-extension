@@ -275,72 +275,15 @@ button:active {
   margin-bottom: 8px;
 }
 
-.image-mode-toggle {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.image-mode-toggle button {
-  margin: 0;
-  background: transparent;
-  border: 1px solid var(--vscode-input-border);
-  color: var(--vscode-foreground);
-}
-
-.image-mode-toggle button.active {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
-  border-color: var(--vscode-focusBorder);
-}
-
-.image-selected {
-  padding: 7px 8px;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 4px;
-  margin: 8px 0;
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-
-.muted {
-  color: var(--vscode-descriptionForeground);
-}
-
 .image-clear {
   margin-top: 0 !important;
 }
 
-.image-result {
-  border-top: 1px solid var(--vscode-panel-border);
-  padding-top: 8px;
-  margin-top: 6px;
-}
-
-.image-result-label {
-  font-size: 10px;
-  color: var(--vscode-descriptionForeground);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 3px;
-}
-
-.image-result-url {
-  padding: 6px 7px;
-  border: 1px solid var(--vscode-input-border);
-  border-radius: 4px;
-  background: var(--vscode-input-background);
-  color: var(--vscode-textLink-foreground);
-  font-size: 11px;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-  user-select: text;
-}
-
 .image-table-wrap {
   overflow-x: auto;
-  margin-top: 8px;
+  margin-top: 12px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
 }
 
 .image-table {
@@ -352,43 +295,67 @@ button:active {
 .image-table th,
 .image-table td {
   border-bottom: 1px solid var(--vscode-panel-border);
-  padding: 6px;
-  vertical-align: top;
+  padding: 8px 10px;
+  vertical-align: middle;
   text-align: left;
 }
 
 .image-table th {
   color: var(--vscode-descriptionForeground);
   font-weight: 600;
+  background: var(--vscode-editor-background);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.image-table tr:last-child td {
+  border-bottom: none;
+}
+
+.image-table tr:hover td {
+  background: var(--vscode-toolbar-hoverBackground);
 }
 
 .image-table input {
-  min-width: 110px;
-  padding: 4px 6px;
+  min-width: 140px;
+  padding: 5px 8px;
+  font-size: 11px;
 }
 
 .image-extension {
   display: block;
   color: var(--vscode-descriptionForeground);
   margin-top: 2px;
+  font-size: 10px;
 }
 
 .cdn-cell {
-  min-width: 150px;
+  min-width: 180px;
+  max-width: 300px;
   overflow-wrap: anywhere;
   color: var(--vscode-textLink-foreground);
+  font-family: monospace;
+  font-size: 10px;
 }
 
 .status-uploaded {
   color: #4ec26b;
+  font-weight: 500;
 }
 
 .status-failed {
   color: #e06060;
+  font-weight: 500;
 }
 
 .status-uploading {
   color: var(--vscode-progressBar-background);
+  font-weight: 500;
+}
+
+.status-pending {
+  color: var(--vscode-descriptionForeground);
 }
 
 /* ── Divider ────────────────────────────────── */

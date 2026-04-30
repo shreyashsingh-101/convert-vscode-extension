@@ -1,8 +1,8 @@
 {
   "name": "convert-vscode-extension",
   "displayName": "Convert VSCode Extension",
-  "description": "Upload JS/CSS files to Convert.com variations",
-  "version": "0.0.4",
+  "description": "Upload JS, CSS, and images to Convert.com projects and variations",
+  "version": "0.0.5",
   "publisher": "ShreyashSingh101",
   "engines": {
     "vscode": "^1.80.0"

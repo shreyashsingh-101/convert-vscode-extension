@@ -2,7 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.0.4] - Latest
+## [0.0.5] - Latest
+
+### Added
+
+- Added new multiple session support for editing and pushing JS/CSS across multiple projects, experiments, or variations.
+- Added editor-based JS/CSS editing with open, close, and push controls per active session.
+- Added a unified image upload view that supports single and multiple image uploads.
+- Added safeguards for editor pushes, including active-session checks, saved-file checks, stale-session checks, and empty-editor checks.
+- Added cleanup for old `.convert` temp files when opening a new editor session.
+
+### Improved
+
+- Limited dropdown previews to 5 visible items with the remaining result count shown below.
+- Improved image upload validation for supported image types, empty files, duplicate extensions, and max file size.
+- Improved JS/CSS upload validation for file type, empty files, real files, and max file size.
+- Cleaned up the sidebar image upload flow and removed legacy single-image UI branches.
+
+### Fixed
+
+- Fixed editor pushes sending blank JS/CSS when editor files were never opened.
+- Fixed stale editor files being pushable after changing project, experiment, or variation.
+- Fixed editor controls staying active after generated editor tabs were closed.
+- Fixed image upload table rendering so file names, statuses, and CDN URLs are escaped safely.
+
+## [0.0.4]
 
 ### Added
 

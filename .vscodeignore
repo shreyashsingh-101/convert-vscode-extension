@@ -10,3 +10,7 @@ vsc-extension-quickstart.md
 **/*.ts
 **/.vscode-test.*
 node_modules/**
+.convert/**
+*.vsix
+out/test/**
+out/**/*.test.js

@@ -20,14 +20,9 @@ let imageUploadState = {
   projectId: null,
   projectName: "",
   projectItems: [],
-  mode: "single",
-  selectedImage: null,
   multipleImages: [],
-  imageName: "",
-  cdnUrl: "",
 };
 let imageUploadQueue = [];
-let pendingImageClearMode = "";
 
 function get(id) {
   return document.getElementById(id).value.trim();
@@ -406,6 +401,7 @@ function renderActiveSummary() {
   document.getElementById("editorFiles").textContent = editorFiles
     ? `Files: ${editorFiles}`
     : "Files: not opened yet";
+  updateEditorActions();
 }
 
 function accountId() {
@@ -436,21 +432,45 @@ function formatTimestamp(timestamp) {
 function setLoading(state) {
   isLoading = state;
   document.getElementById("submitBtn").disabled = state;
-  ["selectImageBtn", "uploadImageBtn", "selectImagesBtn", "uploadImagesBtn"].forEach((id) => {
+  ["selectImagesBtn", "uploadImagesBtn"].forEach((id) => {
     const button = document.getElementById(id);
     if (button) {
       button.disabled = state;
     }
   });
+  updateEditorActions();
   document.getElementById("btnText").innerText = state ? "Pushing..." : "Push to Convert";
   document.getElementById("btnLoader").style.display = state ? "inline-block" : "none";
 }
 
 function setEditorLoading(state, label = "") {
   editorLoading = state;
-  document.getElementById("openEditorBtn").disabled = state;
-  document.getElementById("pushEditorBtn").disabled = state;
-  document.getElementById("openEditorBtn").textContent = state && label ? label : "Open Editor";
+  updateEditorActions();
+  if (state && label) {
+    document.getElementById("openEditorBtn").textContent = label;
+  }
+}
+
+function hasOpenEditor(session = getActiveSession()) {
+  return Boolean(session.editorFiles?.js && session.editorFiles?.css);
+}
+
+function updateEditorActions() {
+  const openButton = document.getElementById("openEditorBtn");
+  const pushButton = document.getElementById("pushEditorBtn");
+
+  if (!openButton || !pushButton || isImageUploadActive()) {
+    return;
+  }
+
+  const editorIsOpen = hasOpenEditor();
+  openButton.disabled = editorLoading;
+  openButton.textContent = editorIsOpen ? "Close Editor" : "Open Editor";
+  openButton.title = editorIsOpen ? "Close editor files" : "Open editor files";
+  pushButton.disabled = editorLoading || !editorIsOpen;
+  pushButton.title = editorIsOpen
+    ? "Push editor changes"
+    : "Open editor files before pushing";
 }
 
 function updateAuthUI() {
@@ -511,11 +531,7 @@ function resetFormState() {
     projectId: null,
     projectName: "",
     projectItems: [],
-    mode: "single",
-    selectedImage: null,
     multipleImages: [],
-    imageName: "",
-    cdnUrl: "",
   };
   nextSessionNumber = 1;
   sessions = [createSession({ name: "Project 1" })];
@@ -768,6 +784,11 @@ function openEditor() {
     return;
   }
 
+  if (hasOpenEditor(session)) {
+    closeActiveEditor();
+    return;
+  }
+
   if (auth === null || editorLoading) {
     return;
   }
@@ -786,6 +807,20 @@ function openEditor() {
   });
 }
 
+function closeActiveEditor() {
+  const session = getActiveSession();
+
+  if (!hasOpenEditor(session) || editorLoading) {
+    return;
+  }
+
+  setEditorLoading(true, "Closing...");
+  vscode.postMessage({
+    command: "closeEditor",
+    sessionId: session.sessionId,
+  });
+}
+
 function pushEditor() {
   const error = validateSelection();
   const auth = getAuthPayload();
@@ -793,6 +828,11 @@ function pushEditor() {
 
   if (error) {
     showToast(error, "error");
+    return;
+  }
+
+  if (!hasOpenEditor(session)) {
+    showToast("Open editor files before pushing", "error");
     return;
   }
 
@@ -833,7 +873,7 @@ function validateImageProject() {
 }
 
 function selectImage() {
-  vscode.postMessage({ command: "selectImage" });
+  vscode.postMessage({ command: "selectImages" });
 }
 
 function selectImages() {
@@ -842,34 +882,6 @@ function selectImages() {
 
 function buildImageName(name, fallback) {
   return (name || "").trim() || fallback || "image";
-}
-
-function uploadImage() {
-  const auth = validateImageProject();
-
-  if (auth === null) {
-    return;
-  }
-
-  if (!imageUploadState.selectedImage) {
-    showToast("Select an image first", "error");
-    return;
-  }
-
-  imageUploadState.imageName = get("imageName");
-  setLoading(true);
-  vscode.postMessage({
-    command: "uploadSelectedImage",
-    ...auth,
-    accountId: imageUploadState.accountId,
-    projectId: imageUploadState.projectId,
-    imagePath: imageUploadState.selectedImage.fsPath,
-    imageName: buildImageName(
-      imageUploadState.imageName,
-      imageUploadState.selectedImage.baseName,
-    ),
-  });
-  saveWebviewState();
 }
 
 function uploadImages() {
@@ -928,51 +940,8 @@ function uploadNextImage(auth) {
   });
 }
 
-function setImageUploadMode(mode) {
-  imageUploadState.mode = mode;
-  renderImageUploadView();
-  saveWebviewState();
-}
-
 function renderImageUploadView() {
-  const mode = imageUploadState.mode || "single";
-
-  document.getElementById("singleImageView").classList.toggle("hidden", mode !== "single");
-  document
-    .getElementById("multipleImageView")
-    .classList.toggle("hidden", mode !== "multiple");
-  document.getElementById("singleImageModeBtn").classList.toggle("active", mode === "single");
-  document
-    .getElementById("multipleImageModeBtn")
-    .classList.toggle("active", mode === "multiple");
-  set("imageName", imageUploadState.imageName);
-  renderSelectedImageSummary();
-  renderImageResult();
   renderMultipleImageTable();
-}
-
-function renderSelectedImageSummary() {
-  const summary = document.getElementById("selectedImageSummary");
-  const image = imageUploadState.selectedImage;
-
-  summary.textContent = image
-    ? `${image.fileName} -> ${buildImageName(imageUploadState.imageName, image.baseName)}${image.extension}`
-    : "No image selected";
-  summary.classList.toggle("muted", !image);
-}
-
-function renderImageResult() {
-  const result = document.getElementById("imageUploadResult");
-  const url = document.getElementById("imageCdnUrl");
-
-  if (!imageUploadState.cdnUrl) {
-    result.classList.add("hidden");
-    url.textContent = "";
-    return;
-  }
-
-  result.classList.remove("hidden");
-  url.textContent = imageUploadState.cdnUrl;
 }
 
 function renderMultipleImageTable() {
@@ -988,13 +957,13 @@ function renderMultipleImageTable() {
     .map(
       (image) => `
         <tr>
-          <td title="${image.fileName}">${image.fileName}</td>
+          <td title="${escapeHtml(image.fileName)}">${escapeHtml(image.fileName)}</td>
           <td>
             <input value="${escapeHtml(image.imageName)}" oninput="updateMultipleImageName('${image.id}', this.value)" />
-            <span class="image-extension">${image.extension}</span>
+            <span class="image-extension">${escapeHtml(image.extension)}</span>
           </td>
-          <td class="status-${image.status}">${image.status}</td>
-          <td class="cdn-cell">${image.cdnUrl || image.error || ""}</td>
+          <td class="status-${escapeHtml(image.status)}">${escapeHtml(image.status)}</td>
+          <td class="cdn-cell">${escapeHtml(image.cdnUrl || image.error || "")}</td>
         </tr>
       `,
     )
@@ -1032,28 +1001,17 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;");
 }
 
-function requestClearImageUpload(mode) {
-  pendingImageClearMode = mode;
+function requestClearImageUpload() {
   document.getElementById("imageClearModal").classList.remove("hidden");
 }
 
 function closeImageClearModal() {
   document.getElementById("imageClearModal").classList.add("hidden");
-  pendingImageClearMode = "";
 }
 
 function confirmClearImageUpload() {
-  if (pendingImageClearMode === "single") {
-    imageUploadState.selectedImage = null;
-    imageUploadState.imageName = "";
-    imageUploadState.cdnUrl = "";
-  }
-
-  if (pendingImageClearMode === "multiple") {
-    imageUploadState.multipleImages = [];
-    imageUploadQueue = [];
-  }
-
+  imageUploadState.multipleImages = [];
+  imageUploadQueue = [];
   closeImageClearModal();
   renderImageUploadView();
   saveWebviewState();
@@ -1176,6 +1134,13 @@ window.addEventListener("message", ({ data }) => {
 
     case "editorOpened": {
       const session = sessions.find((item) => item.sessionId === data.sessionId);
+
+      sessions.forEach((item) => {
+        if (item.sessionId !== data.sessionId) {
+          item.editorFiles = { js: "", css: "" };
+        }
+      });
+
       if (session) {
         session.editorFiles = data.files || { js: "", css: "" };
       }
@@ -1186,16 +1151,23 @@ window.addEventListener("message", ({ data }) => {
       break;
     }
 
-    case "imageSelected":
-      imageUploadState.selectedImage = data.image;
-      imageUploadState.imageName = data.image?.baseName || "";
-      imageUploadState.cdnUrl = "";
-      renderImageUploadView();
-      saveWebviewState();
-      break;
+    case "editorClosed": {
+      const session = sessions.find((item) => item.sessionId === data.sessionId);
 
+      if (session) {
+        session.editorFiles = { js: "", css: "" };
+      }
+
+      setEditorLoading(false);
+      renderActiveSummary();
+      saveConfig();
+      showToast("Editor files closed", "success");
+      break;
+    }
+
+    case "imageSelected":
     case "imagesSelected":
-      imageUploadState.multipleImages = (data.images || []).map((image, index) => ({
+      imageUploadState.multipleImages = (data.images || (data.image ? [data.image] : [])).map((image, index) => ({
         ...image,
         id: `${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
         imageName: image.baseName,
@@ -1230,13 +1202,8 @@ window.addEventListener("message", ({ data }) => {
           image.error = "";
         }
         renderMultipleImageTable();
-        uploadNextImage(getAuthPayload());
-      } else {
-        setLoading(false);
-        imageUploadState.cdnUrl = data.cdnUrl || "";
-        renderImageResult();
         saveWebviewState();
-        showToast("Image uploaded successfully", "success", 3000);
+        uploadNextImage(getAuthPayload());
       }
       break;
 
@@ -1250,10 +1217,8 @@ window.addEventListener("message", ({ data }) => {
           image.error = data.message || "Failed";
         }
         renderMultipleImageTable();
+        saveWebviewState();
         uploadNextImage(getAuthPayload());
-      } else {
-        setLoading(false);
-        showToast(data.message || "Image upload failed", "error");
       }
       break;
 
@@ -1382,7 +1347,7 @@ function renderDropdown(id, items, onSelect, options = {}) {
       return;
     }
 
-    data.slice(0, 20).forEach((item) => {
+    data.slice(0, 5).forEach((item) => {
       const div = document.createElement("div");
       div.className =
         String(item.id) === String(options.selectedId)
@@ -1397,10 +1362,10 @@ function renderDropdown(id, items, onSelect, options = {}) {
       list.appendChild(div);
     });
 
-    if (data.length > 20) {
+    if (data.length > 5) {
       const more = document.createElement("div");
       more.className = "dropdown-more";
-      more.innerText = `+ ${data.length - 20} more...`;
+      more.innerText = `+ ${data.length - 5} more...`;
       list.appendChild(more);
     }
   }
@@ -1552,11 +1517,6 @@ document.getElementById("accountId").addEventListener("input", () => {
   getActiveProjectContext().accountId = get("accountId");
   saveConfig();
 });
-document.getElementById("imageName").addEventListener("input", () => {
-  imageUploadState.imageName = get("imageName");
-  renderSelectedImageSummary();
-  saveWebviewState();
-});
 
 window.addSession = addSession;
 window.switchSession = switchSession;
@@ -1571,10 +1531,7 @@ window.clearAllStoredData = clearAllStoredData;
 window.submit = submit;
 window.openEditor = openEditor;
 window.pushEditor = pushEditor;
-window.setImageUploadMode = setImageUploadMode;
-window.selectImage = selectImage;
 window.selectImages = selectImages;
-window.uploadImage = uploadImage;
 window.uploadImages = uploadImages;
 window.updateMultipleImageName = updateMultipleImageName;
 window.requestClearImageUpload = requestClearImageUpload;
