@@ -345,7 +345,7 @@ function clearSessionFiles(session) {
 }
 
 function clearSessionEditor(session, closeEditors = true) {
-  if (closeEditors) {
+  if (closeEditors && hasOpenEditor(session)) {
     vscode.postMessage({
       command: "closeEditor",
       sessionId: session.sessionId,
