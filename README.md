@@ -40,7 +40,7 @@ A Visual Studio Code extension for uploading JavaScript, CSS, and images directl
 2. Add this callback URL to the OAuth client configuration:
 
    ```text
-   https://shreyashsingh101.github.io/convert-vscode-extension/callback
+   https://shreyashsingh-101.github.io/convert-vscode-extension/callback
    ```
 
 3. In the extension sidebar, click **Change Client ID**.
