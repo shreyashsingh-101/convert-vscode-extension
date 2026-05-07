@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import * as path from "path";
+import { randomBytes } from "crypto";
 import {
   authenticate,
   clearClientId,
@@ -24,9 +26,34 @@ interface EditorSession {
   css: string;
 }
 
+interface ServerVariationConfig {
+  name: string;
+  jsPath: string;
+  cssPath: string;
+}
+
+interface ServerConfig {
+  id: string;
+  name: string;
+  serverPath: string;
+  rootPath: string;
+  domains: string[];
+  clubJsCss: boolean;
+  minimize: boolean;
+  variations: ServerVariationConfig[];
+}
+
+interface ServerLocationSuggestion {
+  value: string;
+  label: string;
+}
+
+const SERVER_CONFIGS_KEY = "convertServerConfigs";
+const LAST_SERVER_CONFIG_KEY = "convertLastServerConfigId";
 const editorSessions = new Map<string, EditorSession>();
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
+let serverTerminal: vscode.Terminal | undefined;
 
 async function resolveToken(
   message: Record<string, unknown>,
@@ -62,6 +89,190 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function asBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function asServerConfig(value: unknown): ServerConfig {
+  const record = asRecord(value) ?? {};
+  const name = asString(record.name).trim();
+  const id = asString(record.id).trim();
+  const variations = Array.isArray(record.variations)
+    ? record.variations
+        .map((item) => asRecord(item))
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map((item) => ({
+          name: asString(item.name).trim(),
+          jsPath: asString(item.jsPath).trim(),
+          cssPath: asString(item.cssPath).trim(),
+        }))
+    : [];
+
+  return {
+    id,
+    name,
+    serverPath: asString(record.serverPath).trim(),
+    rootPath: asString(record.rootPath || record.outputPath).trim(),
+    domains: asStringArray(record.domains)
+      .map((domain) => domain.trim())
+      .filter(Boolean),
+    clubJsCss: asBoolean(record.clubJsCss, true),
+    minimize: asBoolean(record.minimize, false),
+    variations,
+  };
+}
+
+function getStoredServerConfigs(context: vscode.ExtensionContext): ServerConfig[] {
+  return context.workspaceState.get<ServerConfig[]>(SERVER_CONFIGS_KEY) ?? [];
+}
+
+function getPrimaryWorkspacePath(): string {
+  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+  if (!workspacePath) {
+    throw new Error("Open a workspace folder before using workspace-relative server paths.");
+  }
+
+  return workspacePath;
+}
+
+function isFilesystemAbsolutePath(filePath: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(filePath)
+    || filePath.startsWith("\\\\")
+    || (process.platform !== "win32" && path.isAbsolute(filePath));
+}
+
+function resolveWorkspaceOrAbsolutePath(inputPath: string): string {
+  const trimmed = inputPath.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  if (isFilesystemAbsolutePath(trimmed)) {
+    return path.normalize(trimmed);
+  }
+
+  return path.resolve(getPrimaryWorkspacePath(), trimmed);
+}
+
+function resolveChildPath(basePath: string, filePath: string): string {
+  if (isFilesystemAbsolutePath(filePath)) {
+    return filePath;
+  }
+
+  return vscode.Uri.joinPath(
+    vscode.Uri.file(basePath),
+    filePath.replace(/^[\\/]+/, ""),
+  ).fsPath;
+}
+
+function normalizeConfigPath(value: string): string {
+  return value.replace(/\\/g, "/");
+}
+
+function getRelativePath(fromPath: string, toPath: string): string {
+  const relative = normalizeConfigPath(path.relative(fromPath, toPath));
+  return relative || ".";
+}
+
+function getVariationInputPath(rootPath: string, filePath: string): string {
+  return normalizeConfigPath(getRelativePath(rootPath, filePath)).replace(/^\/+/, "");
+}
+
+function getVariationConfigPath(rootPath: string, filePath: string): string {
+  const relative = getVariationInputPath(rootPath, filePath);
+  return `/${relative}`;
+}
+
+async function resolveVariationSourcePath(
+  rootPath: string,
+  filePath: string,
+): Promise<string> {
+  const trimmed = filePath.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  if (/^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith("\\\\")) {
+    return path.normalize(trimmed);
+  }
+
+  if (process.platform !== "win32" && path.isAbsolute(trimmed)) {
+    const normalizedAbsolutePath = path.normalize(trimmed);
+    if (await pathExists(normalizedAbsolutePath, vscode.FileType.File)) {
+      return normalizedAbsolutePath;
+    }
+  }
+
+  return vscode.Uri.joinPath(
+    vscode.Uri.file(rootPath),
+    trimmed.replace(/^[\\/]+/, ""),
+  ).fsPath;
+}
+
+function materializeServerConfig(config: ServerConfig): ServerConfig {
+  return {
+    ...config,
+    serverPath: resolveWorkspaceOrAbsolutePath(config.serverPath),
+    rootPath: resolveWorkspaceOrAbsolutePath(config.rootPath),
+  };
+}
+
+function generatePrettyServerConfigId(existingIds: Set<string>): string {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = `CFG-${randomBytes(3).toString("hex").toUpperCase()}`;
+    if (!existingIds.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `CFG-${Date.now().toString(36).toUpperCase()}`;
+}
+
+async function normalizeStoredServerConfigs(
+  context: vscode.ExtensionContext,
+): Promise<ServerConfig[]> {
+  const configs = getStoredServerConfigs(context);
+  const seenIds = new Set<string>();
+  let changed = false;
+
+  const normalized = configs.map((config) => {
+    const trimmedName = config.name.trim();
+    let nextId = (config.id || "").trim();
+
+    if (!nextId || nextId === trimmedName || seenIds.has(nextId)) {
+      nextId = generatePrettyServerConfigId(seenIds);
+      changed = true;
+    }
+
+    seenIds.add(nextId);
+    return {
+      ...config,
+      id: nextId,
+      name: trimmedName,
+    };
+  });
+
+  if (changed) {
+    await context.workspaceState.update(SERVER_CONFIGS_KEY, normalized);
+
+    const lastConfigId = context.workspaceState.get<string>(LAST_SERVER_CONFIG_KEY);
+    const matchingPrevious = configs.find((config) => config.id === lastConfigId);
+    const matchingNext = matchingPrevious
+      ? normalized.find((config) => config.name === matchingPrevious.name)
+      : normalized[0];
+
+    await context.workspaceState.update(
+      LAST_SERVER_CONFIG_KEY,
+      matchingNext?.id ?? undefined,
+    );
+  }
+
+  return changed ? normalized : configs;
 }
 
 function getWorkspaceRoot(): vscode.Uri {
@@ -336,6 +547,313 @@ async function readTextFile(uri: vscode.Uri): Promise<string> {
 
 async function writeTextFile(uri: vscode.Uri, content: string): Promise<void> {
   await vscode.workspace.fs.writeFile(uri, textEncoder.encode(content));
+}
+
+async function pathExists(path: string, type?: vscode.FileType): Promise<boolean> {
+  try {
+    const stat = await vscode.workspace.fs.stat(vscode.Uri.file(path));
+    return type === undefined || stat.type === type;
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonFile(uri: vscode.Uri): Promise<Record<string, unknown>> {
+  const content = await readTextFile(uri);
+
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    const record = asRecord(parsed);
+
+    if (!record) {
+      throw new Error("config.json must contain a JSON object.");
+    }
+
+    return record;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Unable to parse ${uri.fsPath}: ${message}`);
+  }
+}
+
+function getOpenEditorFilePaths(): string[] {
+  const paths = new Set<string>();
+
+  for (const group of vscode.window.tabGroups.all) {
+    for (const tab of group.tabs) {
+      if (tab.input instanceof vscode.TabInputText) {
+        paths.add(tab.input.uri.fsPath);
+      }
+    }
+  }
+
+  return [...paths];
+}
+
+function buildServerLocationSuggestions(
+  kind: "file" | "folder",
+  basePath: string,
+): ServerLocationSuggestion[] {
+  const resolvedBasePath = basePath.trim()
+    ? resolveWorkspaceOrAbsolutePath(basePath)
+    : "";
+  const normalizedBasePath = resolvedBasePath.toLowerCase();
+  const folderPaths = new Set<string>();
+  const filePaths = new Set<string>();
+
+  for (const fsPath of getOpenEditorFilePaths()) {
+    filePaths.add(fsPath);
+
+    const lastSeparator = Math.max(fsPath.lastIndexOf("\\"), fsPath.lastIndexOf("/"));
+    if (lastSeparator > 0) {
+      folderPaths.add(fsPath.slice(0, lastSeparator));
+    }
+
+    if (
+      normalizedBasePath &&
+      fsPath.toLowerCase().startsWith(normalizedBasePath)
+    ) {
+      const relativePath = getVariationInputPath(resolvedBasePath, fsPath);
+      filePaths.add(relativePath);
+    }
+  }
+
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    folderPaths.add(folder.uri.fsPath);
+  }
+
+  const values = [...(kind === "file" ? filePaths : folderPaths)];
+  return values.slice(0, 12).map((value) => ({
+    value,
+    label: value,
+  }));
+}
+
+async function validateServerConfig(config: ServerConfig): Promise<string[]> {
+  const resolvedConfig = materializeServerConfig(config);
+  const errors: string[] = [];
+  const seenVariationNames = new Set<string>();
+
+  if (!resolvedConfig.name) {
+    errors.push("Config name is required.");
+  }
+
+  if (!resolvedConfig.serverPath) {
+    errors.push("Server folder path is required.");
+  } else if (!(await pathExists(resolvedConfig.serverPath, vscode.FileType.Directory))) {
+    errors.push(`Server folder does not exist: ${config.serverPath}`);
+  }
+
+  if (!resolvedConfig.rootPath) {
+    errors.push("Root/test folder path is required.");
+  } else if (!(await pathExists(resolvedConfig.rootPath, vscode.FileType.Directory))) {
+    errors.push(`Root/test folder does not exist: ${config.rootPath}`);
+  }
+
+  if (!resolvedConfig.variations.length) {
+    errors.push("Add at least one variation.");
+  }
+
+  for (const [index, variation] of resolvedConfig.variations.entries()) {
+    const label = variation.name || `Variation ${index + 1}`;
+    const variationKey = variation.name.toLowerCase();
+
+    if (!variation.name) {
+      errors.push(`Variation ${index + 1} needs a name.`);
+    } else if (seenVariationNames.has(variationKey)) {
+      errors.push(`Variation name "${variation.name}" is duplicated.`);
+    } else {
+      seenVariationNames.add(variationKey);
+    }
+
+    if (!variation.jsPath) {
+      errors.push(`${label} needs a JS file path.`);
+    } else {
+      const jsPath = await resolveVariationSourcePath(
+        resolvedConfig.rootPath,
+        variation.jsPath,
+      );
+      if (!(await pathExists(jsPath, vscode.FileType.File))) {
+        errors.push(`${label} JS file does not exist: ${variation.jsPath}`);
+      } else if (!jsPath.toLowerCase().endsWith(".js")) {
+        errors.push(`${label} JS path must point to a .js file.`);
+      }
+    }
+
+    if (!variation.cssPath) {
+      errors.push(`${label} needs a CSS file path.`);
+    } else {
+      const cssPath = await resolveVariationSourcePath(
+        resolvedConfig.rootPath,
+        variation.cssPath,
+      );
+      if (!(await pathExists(cssPath, vscode.FileType.File))) {
+        errors.push(`${label} CSS file does not exist: ${variation.cssPath}`);
+      } else if (!/\.(css|scss|sass)$/i.test(cssPath)) {
+        errors.push(`${label} CSS path must point to a .css, .scss, or .sass file.`);
+      }
+    }
+  }
+
+  if (resolvedConfig.serverPath) {
+    const configPath = vscode.Uri.joinPath(
+      vscode.Uri.file(resolvedConfig.serverPath),
+      "config.json",
+    );
+
+    if (!(await pathExists(configPath.fsPath, vscode.FileType.File))) {
+      errors.push(`Server config file does not exist: ${configPath.fsPath}`);
+    }
+  }
+
+  return errors;
+}
+
+async function updateServerConfigJson(
+  configJson: Record<string, unknown>,
+  config: ServerConfig,
+): Promise<Record<string, unknown>> {
+  const resolvedConfig = materializeServerConfig(config);
+  const experimentRootPath = resolvedConfig.rootPath;
+  const experimentParentPath = path.dirname(experimentRootPath);
+  const testDir = getRelativePath(resolvedConfig.serverPath, experimentParentPath);
+  const outputDir = getRelativePath(resolvedConfig.serverPath, experimentRootPath);
+  const experimentRoot = `/${normalizeConfigPath(path.basename(experimentRootPath))}`;
+  const experiments = Array.isArray(configJson.experiments)
+    ? configJson.experiments
+    : [];
+  const firstExperiment = asRecord(experiments[0]) ?? {};
+  const existingVariations = Array.isArray(firstExperiment.variations)
+    ? firstExperiment.variations.map((item) => asRecord(item) ?? {})
+    : [];
+  const variations = await Promise.all(resolvedConfig.variations.map(async (variation, index) => {
+    const existing = existingVariations[index] ?? {};
+    const name = variation.name || `Variation ${index + 1}`;
+    const resolvedJsPath = await resolveVariationSourcePath(
+      experimentRootPath,
+      variation.jsPath,
+    );
+    const resolvedCssPath = await resolveVariationSourcePath(
+      experimentRootPath,
+      variation.cssPath,
+    );
+
+    return {
+      ...existing,
+      id: asString(existing.id) || `v${index + 1}`,
+      name,
+      description: asString(existing.description) || name,
+      js: getVariationConfigPath(
+        experimentRootPath,
+        resolvedJsPath,
+      ),
+      css: getVariationConfigPath(
+        experimentRootPath,
+        resolvedCssPath,
+      ),
+    };
+  }));
+
+  return {
+    ...configJson,
+    testDir,
+    outputDir,
+    experiments: [
+      {
+        ...firstExperiment,
+        id: resolvedConfig.name,
+        name: resolvedConfig.name,
+        root: experimentRoot,
+        clubJsCss: resolvedConfig.clubJsCss,
+        minimize: resolvedConfig.minimize,
+        domains: resolvedConfig.domains,
+        variations,
+      },
+      ...experiments.slice(1),
+    ],
+  };
+}
+
+async function saveServerConfigInWorkspace(
+  context: vscode.ExtensionContext,
+  config: ServerConfig,
+): Promise<ServerConfig> {
+  const configs = await normalizeStoredServerConfigs(context);
+  const trimmedName = config.name.trim();
+  const existingIds = new Set(configs.map((item) => item.id));
+  const currentConfig = config.id
+    ? configs.find((item) => item.id === config.id)
+    : undefined;
+  const duplicateNameConfig = configs.find(
+    (item) => item.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+  );
+
+  if (duplicateNameConfig && duplicateNameConfig.id !== config.id) {
+    throw new Error(`A saved config named "${trimmedName}" already exists. Choose a different name.`);
+  }
+
+  const isRenameOfExistingConfig = Boolean(
+    currentConfig
+    && currentConfig.name.trim().toLowerCase() !== trimmedName.toLowerCase(),
+  );
+
+  const id = !isRenameOfExistingConfig && config.id && (currentConfig || !existingIds.has(config.id))
+    ? config.id
+    : generatePrettyServerConfigId(existingIds);
+  const savedConfig = {
+    ...config,
+    id,
+    name: trimmedName,
+  };
+  const nextConfigs = [
+    savedConfig,
+    ...configs.filter((item) => item.id !== id),
+  ];
+
+  await context.workspaceState.update(SERVER_CONFIGS_KEY, nextConfigs);
+  await context.workspaceState.update(LAST_SERVER_CONFIG_KEY, id);
+
+  return savedConfig;
+}
+
+async function clearServerConfigInWorkspace(
+  context: vscode.ExtensionContext,
+  id: string,
+): Promise<ServerConfig[]> {
+  const configs = getStoredServerConfigs(context);
+  const nextConfigs = configs.filter(
+    (item) => item.id !== id,
+  );
+
+  await context.workspaceState.update(SERVER_CONFIGS_KEY, nextConfigs);
+
+  const lastConfigId = context.workspaceState.get<string>(LAST_SERVER_CONFIG_KEY);
+  if (lastConfigId && lastConfigId === id) {
+    await context.workspaceState.update(
+      LAST_SERVER_CONFIG_KEY,
+      nextConfigs[0]?.id ?? undefined,
+    );
+  }
+
+  return nextConfigs;
+}
+
+async function replaceServerTerminal(
+  serverPath: string,
+): Promise<vscode.Terminal> {
+  if (serverTerminal) {
+    serverTerminal.dispose();
+    serverTerminal = undefined;
+  }
+
+  const terminal = vscode.window.createTerminal({
+    name: "AB Codeflame Server",
+    cwd: serverPath,
+  });
+  serverTerminal = terminal;
+  terminal.sendText("npm start");
+  terminal.show();
+  return terminal;
 }
 
 async function closeEditorSessionFiles(sessionId: string): Promise<void> {
@@ -692,8 +1210,238 @@ export async function handleMessage(
         await clearToken(context);
         await clearClientId(context);
         await context.globalState.update("convertConfig", undefined);
+        await context.workspaceState.update(SERVER_CONFIGS_KEY, undefined);
+        await context.workspaceState.update(LAST_SERVER_CONFIG_KEY, undefined);
         fileStore?.clear?.();
         await webview.postMessage({ command: "clearedAll" });
+        break;
+      }
+
+      case "loadServerConfigs": {
+        if (!context) {
+          throw new Error("Extension context unavailable");
+        }
+
+        const configs = await normalizeStoredServerConfigs(context);
+
+        await webview.postMessage({
+          command: "serverConfigsLoaded",
+          configs,
+          lastConfigId: context.workspaceState.get<string>(LAST_SERVER_CONFIG_KEY),
+        });
+        break;
+      }
+
+      case "clearServerConfig": {
+        if (!context) {
+          throw new Error("Extension context unavailable");
+        }
+
+        const id = asString(message.id).trim();
+        if (!id) {
+          throw new Error("Select a saved config to clear.");
+        }
+
+        const configs = await clearServerConfigInWorkspace(context, id);
+        await webview.postMessage({
+          command: "serverConfigCleared",
+          message: "Cleared the selected server config.",
+          configs,
+        });
+        break;
+      }
+
+      case "clearAllServerConfigs": {
+        if (!context) {
+          throw new Error("Extension context unavailable");
+        }
+
+        await context.workspaceState.update(SERVER_CONFIGS_KEY, []);
+        await context.workspaceState.update(LAST_SERVER_CONFIG_KEY, undefined);
+        await webview.postMessage({
+          command: "allServerConfigsCleared",
+          message: "Cleared all stored server configs.",
+          configs: [],
+        });
+        break;
+      }
+
+      case "getServerLocationSuggestions": {
+        const field = asString(message.field);
+        const variationId = asString(message.variationId);
+        const kind = asString(message.kind) === "folder" ? "folder" : "file";
+        const suggestions = buildServerLocationSuggestions(
+          kind,
+          asString(message.basePath),
+        );
+
+        await webview.postMessage({
+          command: "serverLocationSuggestions",
+          field,
+          variationId,
+          suggestions,
+        });
+        break;
+      }
+
+      case "pickServerLocation": {
+        const field = asString(message.field);
+        const variationId = asString(message.variationId);
+        const kind = asString(message.kind) === "folder" ? "folder" : "file";
+        const basePath = asString(message.basePath);
+        const resolvedBasePath = basePath.trim()
+          ? resolveWorkspaceOrAbsolutePath(basePath)
+          : "";
+        const currentValue = asString(message.currentValue);
+        const defaultUri = currentValue
+          ? vscode.Uri.file(
+              kind === "file"
+                ? await resolveVariationSourcePath(resolvedBasePath, currentValue)
+                : resolveWorkspaceOrAbsolutePath(currentValue),
+            )
+          : resolvedBasePath
+            ? vscode.Uri.file(resolvedBasePath)
+            : undefined;
+
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFiles: kind === "file",
+          canSelectFolders: kind === "folder",
+          canSelectMany: false,
+          defaultUri,
+          title:
+            kind === "folder"
+              ? "Select folder"
+              : "Select file",
+          filters:
+            kind === "file"
+              ? {
+                  Files: field === "cssPath" ? ["css", "scss", "sass"] : ["js"],
+                }
+              : undefined,
+        });
+
+        if (!picked?.[0]) {
+          break;
+        }
+
+        const pickedPath =
+          kind === "file" && resolvedBasePath
+            ? getVariationInputPath(resolvedBasePath, picked[0].fsPath)
+            : picked[0].fsPath;
+
+        await webview.postMessage({
+          command: "serverLocationPicked",
+          field,
+          variationId,
+          path: pickedPath,
+        });
+        break;
+      }
+
+      case "saveServerConfig": {
+        if (!context) {
+          throw new Error("Extension context unavailable");
+        }
+
+        const config = asServerConfig(message.config);
+        const errors = await validateServerConfig(config);
+
+        if (errors.length) {
+          await webview.postMessage({
+            command: "serverValidationError",
+            message: "Server config has validation errors.",
+            title: "Please fix these server config issues:",
+            errors,
+          });
+          break;
+        }
+
+        const savedConfig = await saveServerConfigInWorkspace(context, config);
+        await webview.postMessage({
+          command: "serverConfigSaved",
+          message: `Server config saved as ${savedConfig.name} (${savedConfig.id}).`,
+          config: savedConfig,
+          configs: getStoredServerConfigs(context),
+        });
+        break;
+      }
+
+      case "previewServerConfig": {
+        const config = asServerConfig(message.config);
+        const resolvedConfig = materializeServerConfig(config);
+        const errors = await validateServerConfig(config);
+
+        if (errors.length) {
+          await webview.postMessage({
+            command: "serverValidationError",
+            message: "Server config has validation errors.",
+            title: "Please fix these server config issues:",
+            errors,
+          });
+          break;
+        }
+
+        const configUri = vscode.Uri.joinPath(
+          vscode.Uri.file(resolvedConfig.serverPath),
+          "config.json",
+        );
+        const configJson = await readJsonFile(configUri);
+        const updatedConfigJson = await updateServerConfigJson(configJson, config);
+
+        await writeTextFile(
+          configUri,
+          `${JSON.stringify(updatedConfigJson, null, 2)}\n`,
+        );
+        await vscode.window.showTextDocument(configUri, { preview: false });
+
+        await webview.postMessage({
+          command: "serverConfigPreviewed",
+          message: "Config preview opened.",
+          config,
+        });
+        break;
+      }
+
+      case "runServer": {
+        if (!context) {
+          throw new Error("Extension context unavailable");
+        }
+
+        const config = asServerConfig(message.config);
+        const resolvedConfig = materializeServerConfig(config);
+        const errors = await validateServerConfig(config);
+
+        if (errors.length) {
+          await webview.postMessage({
+            command: "serverValidationError",
+            message: "Server config has validation errors.",
+            title: "Please fix these server config issues:",
+            errors,
+          });
+          break;
+        }
+
+        const savedConfig = await saveServerConfigInWorkspace(context, config);
+        const configUri = vscode.Uri.joinPath(
+          vscode.Uri.file(resolvedConfig.serverPath),
+          "config.json",
+        );
+        const configJson = await readJsonFile(configUri);
+        const updatedConfigJson = await updateServerConfigJson(configJson, savedConfig);
+
+        await writeTextFile(
+          configUri,
+          `${JSON.stringify(updatedConfigJson, null, 2)}\n`,
+        );
+
+        await replaceServerTerminal(resolvedConfig.serverPath);
+
+        await webview.postMessage({
+          command: "serverRunning",
+          message: `Server started using ${savedConfig.name} (${savedConfig.id}).`,
+          config: savedConfig,
+          configs: getStoredServerConfigs(context),
+        });
         break;
       }
 
@@ -1150,6 +1898,21 @@ export async function handleMessage(
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error("Error in handleMessage:", errorMessage);
+
+    if (
+      ["saveServerConfig", "previewServerConfig", "runServer", "pickServerLocation", "getServerLocationSuggestions"].includes(
+        asString(message.command),
+      )
+    ) {
+      await webview.postMessage({
+        command: "serverValidationError",
+        message: errorMessage,
+        title: "Server action failed",
+        errors: [errorMessage],
+      });
+      return;
+    }
+
     await webview.postMessage({
       command: "error",
       message: errorMessage,

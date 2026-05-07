@@ -2,6 +2,7 @@ const vscode = acquireVsCodeApi();
 
 const GLOBAL_VARIATION_ID = "global";
 const IMAGE_UPLOAD_SESSION_ID = "__imageUpload";
+const SERVER_SESSION_ID = "__server";
 
 let authMode = "apikey";
 let accounts = [];
@@ -23,6 +24,55 @@ let imageUploadState = {
   multipleImages: [],
 };
 let imageUploadQueue = [];
+let serverConfigs = [];
+let serverState = createDefaultServerConfig();
+let selectedServerConfigId = "";
+let isServerConfigDropdownOpen = false;
+let serverConfigSearchTerm = "";
+let loadedServerConfigId = "";
+let loadedServerConfigName = "";
+
+function createServerVariation(seed = {}) {
+  return {
+    id: seed.id || `variation_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    name: seed.name || "",
+    jsPath: seed.jsPath || "",
+    cssPath: seed.cssPath || "",
+  };
+}
+
+function createEmptyServerConfig(seed = {}) {
+  return {
+    id: seed.id || "",
+    name: seed.name || "",
+    serverPath: seed.serverPath || "",
+    rootPath: seed.rootPath || seed.outputPath || "",
+    domains: Array.isArray(seed.domains) ? seed.domains : [],
+    clubJsCss:
+      typeof seed.clubJsCss === "boolean" ? seed.clubJsCss : true,
+    minimize: typeof seed.minimize === "boolean" ? seed.minimize : false,
+    variations: (seed.variations?.length ? seed.variations : [{}]).map(
+      createServerVariation,
+    ),
+  };
+}
+
+function createDefaultServerConfig() {
+  return createEmptyServerConfig({
+    clubJsCss: true,
+    minimize: false,
+  });
+}
+
+function resetLoadedServerConfigTracking() {
+  loadedServerConfigId = "";
+  loadedServerConfigName = "";
+}
+
+function syncServerSearchInput(value = "") {
+  serverConfigSearchTerm = value || "";
+  setServerInput("serverConfigSearch", serverConfigSearchTerm);
+}
 
 function get(id) {
   return document.getElementById(id).value.trim();
@@ -68,7 +118,9 @@ function getActiveSession() {
   let session = sessions.find((item) => item.sessionId === activeSessionId);
   if (!session) {
     session = sessions[0];
-    activeSessionId = session.sessionId;
+    if (!isImageUploadActive() && !isServerActive()) {
+      activeSessionId = session.sessionId;
+    }
   }
 
   return session;
@@ -83,6 +135,7 @@ function saveWebviewState() {
     activeSessionId,
     uploadFileMemory,
     imageUploadState,
+    serverState,
     apiKey: get("apiKey"),
   });
 }
@@ -117,6 +170,12 @@ function initSessions() {
     nextSessionNumber = sessions.length + 1;
     uploadFileMemory = saved.uploadFileMemory || {};
     imageUploadState = saved.imageUploadState || imageUploadState;
+    serverState = createEmptyServerConfig(saved.serverState || {});
+    selectedServerConfigId = serverState.id || "";
+    loadedServerConfigId = serverState.id || "";
+    loadedServerConfigName = serverState.name || "";
+    isServerConfigDropdownOpen = false;
+    serverConfigSearchTerm = "";
     set("apiKey", saved.apiKey || "");
   } else {
     nextSessionNumber = 1;
@@ -125,6 +184,7 @@ function initSessions() {
   }
 
   renderSession();
+  vscode.postMessage({ command: "loadServerConfigs" });
   vscode.postMessage({ command: "getClientId" });
 }
 
@@ -140,6 +200,10 @@ function getNextSessionNumber() {
 
 function isImageUploadActive() {
   return activeSessionId === IMAGE_UPLOAD_SESSION_ID;
+}
+
+function isServerActive() {
+  return activeSessionId === SERVER_SESSION_ID;
 }
 
 function getActiveProjectContext() {
@@ -168,6 +232,12 @@ function switchSession(sessionId) {
 
 function switchImageUpload() {
   activeSessionId = IMAGE_UPLOAD_SESSION_ID;
+  renderSession();
+  saveWebviewState();
+}
+
+function switchServerTab() {
+  activeSessionId = SERVER_SESSION_ID;
   renderSession();
   saveWebviewState();
 }
@@ -229,22 +299,35 @@ function renderTabs() {
   imageTab.title = "Upload image to CDN";
   imageTab.onclick = switchImageUpload;
   container.appendChild(imageTab);
+
+  const serverTab = document.createElement("button");
+  serverTab.className = isServerActive()
+    ? "session-tab image-tab active"
+    : "session-tab image-tab";
+  serverTab.textContent = "Server";
+  serverTab.title = "Configure and run local server";
+  serverTab.onclick = switchServerTab;
+  container.appendChild(serverTab);
 }
 
 function renderSession() {
-  const context = getActiveProjectContext();
-
   renderTabs();
-  set("accountId", context.accountId);
   updateAuthUI();
-  renderDropdown("projects", context.projectItems, selectProject, {
-    selectedId: context.projectId,
-    remoteSearch: true,
-    collapseWhenSelected: Boolean(context.projectId),
-  });
   renderWorkflowMode();
 
-  if (!isImageUploadActive()) {
+  if (isServerActive()) {
+    renderServerView();
+  } else {
+    const context = getActiveProjectContext();
+    set("accountId", context.accountId);
+    renderDropdown("projects", context.projectItems, selectProject, {
+      selectedId: context.projectId,
+      remoteSearch: true,
+      collapseWhenSelected: Boolean(context.projectId),
+    });
+  }
+
+  if (!isImageUploadActive() && !isServerActive()) {
     const session = getActiveSession();
     renderDropdown("experiences", session.experienceItems, selectExperience, {
       selectedId: session.experienceId,
@@ -264,23 +347,49 @@ function renderSession() {
 
 function renderWorkflowMode() {
   const imageMode = isImageUploadActive();
-  const workflowIds = [
+  const serverMode = isServerActive();
+  const sharedWorkflowIds = [
     "experienceSection",
     "variationSection",
     "clearSection",
     "editorSection",
     "filesSection",
   ];
+  const serverOnlyHiddenIds = [
+    "apiKeySection",
+    "orSeparator",
+    "oauthSection",
+    "authActionSection",
+    "accountIdSection",
+    "accountSelectSection",
+    "loadProjectsBtn",
+    "projectSection",
+  ];
 
-  workflowIds.forEach((id) => {
-    document.getElementById(id).style.display = imageMode ? "none" : "block";
+  sharedWorkflowIds.forEach((id) => {
+    const element = document.getElementById(id);
+    if (!element) {
+      return;
+    }
+
+    element.style.display = imageMode || serverMode ? "none" : "block";
+  });
+
+  serverOnlyHiddenIds.forEach((id) => {
+    const element = document.getElementById(id);
+    if (!element) {
+      return;
+    }
+
+    element.style.display = serverMode ? "none" : "block";
   });
 
   document.querySelectorAll(".workflow-only").forEach((element) => {
-    element.style.display = imageMode ? "none" : "block";
+    element.style.display = imageMode || serverMode ? "none" : "block";
   });
 
   document.getElementById("imageUploadView").classList.toggle("hidden", !imageMode);
+  document.getElementById("serverView").classList.toggle("hidden", !serverMode);
   renderImageUploadView();
 }
 
@@ -382,6 +491,15 @@ function renderActiveSummary() {
     document.getElementById("activeSessionName").textContent = "Image Upload";
     document.getElementById("editorContext").textContent = `Uploading to: ${project}`;
     document.getElementById("editorFiles").textContent = "Project CDN image storage";
+    return;
+  }
+
+  if (isServerActive()) {
+    document.getElementById("activeSessionName").textContent = "Server";
+    document.getElementById("editorContext").textContent =
+      serverState.name || "Local server configuration";
+    document.getElementById("editorFiles").textContent =
+      serverState.serverPath || "Select a server folder";
     return;
   }
 
@@ -533,6 +651,11 @@ function resetFormState() {
     projectItems: [],
     multipleImages: [],
   };
+  serverConfigs = [];
+  serverState = createDefaultServerConfig();
+  selectedServerConfigId = "";
+  isServerConfigDropdownOpen = false;
+  resetLoadedServerConfigTracking();
   nextSessionNumber = 1;
   sessions = [createSession({ name: "Project 1" })];
   nextSessionNumber = 2;
@@ -1017,9 +1140,790 @@ function confirmClearImageUpload() {
   saveWebviewState();
 }
 
+function getServerInput(id) {
+  const element = document.getElementById(id);
+  return element ? element.value.trim() : "";
+}
+
+function setServerInput(id, value) {
+  const element = document.getElementById(id);
+  if (element) {
+    element.value = value || "";
+  }
+}
+
+function getServerDomains() {
+  return (serverState.domains || [])
+    .map((domain) => String(domain || "").trim())
+    .filter(Boolean);
+}
+
+function collectServerConfigFromForm() {
+  const name = getServerInput("serverConfigName");
+
+  return {
+    id: serverState.id || "",
+    name,
+    serverPath: getServerInput("serverPath"),
+    rootPath: getServerInput("serverRootPath"),
+    domains: getServerDomains(),
+    clubJsCss: serverState.clubJsCss,
+    minimize: serverState.minimize,
+    variations: serverState.variations.map((variation) => ({
+      name: variation.name.trim(),
+      jsPath: variation.jsPath.trim(),
+      cssPath: variation.cssPath.trim(),
+    })),
+  };
+}
+
+function setServerErrors(errors, title = "Fix the following before continuing:") {
+  const container = document.getElementById("serverErrors");
+  if (!container) {
+    return;
+  }
+
+  if (!errors.length) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    return;
+  }
+
+  container.classList.remove("hidden");
+  container.innerHTML = `<strong>${escapeHtml(title)}</strong>${errors
+    .map((error) => `<div>${escapeHtml(error)}</div>`)
+    .join("")}`;
+}
+
+function validateServerForm(config = collectServerConfigFromForm()) {
+  const errors = [];
+  const variationNames = new Set();
+  const filledDomains = (serverState.domains || []).filter((domain) =>
+    String(domain || "").trim(),
+  );
+  const emptyDomains = (serverState.domains || []).filter((domain) =>
+    !String(domain || "").trim(),
+  );
+
+  if (!config.name) {
+    errors.push("Config name is required.");
+  }
+
+  if (!config.serverPath) {
+    errors.push("Server folder path is required.");
+  }
+
+  if (!config.rootPath) {
+    errors.push("Root/test folder path is required.");
+  }
+
+  if (!config.variations.length) {
+    errors.push("Add at least one variation.");
+  }
+
+  if (filledDomains.length && emptyDomains.length) {
+    errors.push("Fill or remove empty domain rows before continuing.");
+  }
+
+  config.variations.forEach((variation, index) => {
+    const label = variation.name || `Variation ${index + 1}`;
+    const key = variation.name.toLowerCase();
+
+    if (!variation.name) {
+      errors.push(`Variation ${index + 1} needs a name.`);
+    } else if (variationNames.has(key)) {
+      errors.push(`Variation name "${variation.name}" is duplicated.`);
+    } else {
+      variationNames.add(key);
+    }
+
+    if (!variation.jsPath) {
+      errors.push(`${label} needs a JS file path.`);
+    }
+
+    if (!variation.cssPath) {
+      errors.push(`${label} needs a CSS file path.`);
+    }
+  });
+
+  return errors;
+}
+
+function validateServerConfigNameUniqueness(config = collectServerConfigFromForm()) {
+  const duplicate = serverConfigs.find(
+    (item) =>
+      item.name.trim().toLowerCase() === config.name.trim().toLowerCase()
+      && item.id !== (config.id || ""),
+  );
+
+  return duplicate
+    ? `A saved config named "${config.name}" already exists. Choose a different name.`
+    : "";
+}
+
+function updateServerActions() {
+  const runButton = document.getElementById("runServerBtn");
+  const saveButton = document.getElementById("saveServerConfigBtn");
+  const previewButton = document.getElementById("previewServerConfigBtn");
+
+  if (runButton) {
+    runButton.disabled = false;
+  }
+
+  if (saveButton) {
+    saveButton.disabled = false;
+  }
+
+  if (previewButton) {
+    previewButton.disabled = false;
+  }
+}
+
+function syncServerRadioButtons() {
+  document.querySelectorAll('input[name="serverClubJsCss"]').forEach((input) => {
+    input.checked = input.value === String(serverState.clubJsCss);
+  });
+  document.querySelectorAll('input[name="serverMinimize"]').forEach((input) => {
+    input.checked = input.value === String(serverState.minimize);
+  });
+}
+
+function renderServerForm(config = serverState) {
+  serverState = createEmptyServerConfig(config);
+  selectedServerConfigId = serverState.id || "";
+  setServerInput("serverConfigName", serverState.name);
+  setServerInput("serverPath", serverState.serverPath);
+  setServerInput("serverRootPath", serverState.rootPath);
+  syncServerRadioButtons();
+  clearAllServerSuggestionLists();
+  renderActiveServerConfig();
+  renderServerDomains();
+  renderServerVariations();
+  setServerErrors([]);
+  updateServerActions();
+  saveWebviewState();
+}
+
+function renderServerView() {
+  renderServerForm(serverState);
+  renderServerConfigList();
+}
+
+function renderActiveServerConfig() {
+  const container = document.getElementById("activeServerConfig");
+
+  if (!container) {
+    return;
+  }
+
+  if (!loadedServerConfigId) {
+    container.classList.remove("hidden");
+    container.innerHTML = '<strong>Unsaved config</strong> <code>New</code>';
+    return;
+  }
+
+  container.classList.remove("hidden");
+  container.innerHTML = `<strong>${escapeHtml(loadedServerConfigName || "Unnamed config")}</strong> <code>${escapeHtml(loadedServerConfigId)}</code>`;
+}
+
+function startNewServerConfig() {
+  const preservedServerPath = serverState.serverPath || getServerInput("serverPath");
+  serverState = createDefaultServerConfig();
+  serverState.serverPath = preservedServerPath || "";
+  selectedServerConfigId = "";
+  resetLoadedServerConfigTracking();
+  syncServerSearchInput("");
+  isServerConfigDropdownOpen = false;
+  renderServerView();
+  renderActiveSummary();
+  saveWebviewState();
+  showToast("Started a new unsaved server config", "success");
+}
+
+function updateServerConfigSearch(value = "") {
+  serverConfigSearchTerm = value;
+  isServerConfigDropdownOpen =
+    document.activeElement === document.getElementById("serverConfigSearch");
+  renderServerConfigList();
+}
+
+function renderServerConfigList() {
+  const container = document.getElementById("serverConfigList");
+  const searchInput = document.getElementById("serverConfigSearch");
+  const search = serverConfigSearchTerm.toLowerCase();
+
+  if (!container) {
+    return;
+  }
+
+  if (!isServerConfigDropdownOpen || document.activeElement !== searchInput) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    return;
+  }
+
+  const matches = serverConfigs.filter((config) => {
+    const text = [config.name, config.id, config.serverPath, config.rootPath]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return text.includes(search);
+  });
+
+  if (!matches.length) {
+    container.classList.remove("hidden");
+    container.innerHTML = '<div class="dropdown-empty">No saved configs</div>';
+    return;
+  }
+
+  container.classList.remove("hidden");
+  container.innerHTML = matches
+    .slice(0, 5)
+    .map(
+      (config) => `
+        <div class="saved-config-item ${config.id === selectedServerConfigId ? "active" : ""}">
+          <button type="button" onmousedown="selectServerConfigOption(event, '${encodeURIComponent(config.id || "")}')">
+            <span class="saved-config-option">
+              <span>${escapeHtml(config.name || config.serverPath || "Untitled config")}</span>
+              <code>${escapeHtml(config.id || "")}</code>
+            </span>
+          </button>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function openServerConfigDropdown() {
+  serverConfigSearchTerm = getServerInput("serverConfigSearch");
+  isServerConfigDropdownOpen = true;
+  renderServerConfigList();
+}
+
+function closeServerConfigDropdown() {
+  isServerConfigDropdownOpen = false;
+  renderServerConfigList();
+}
+
+function loadServerConfig(encodedId) {
+  const id = decodeURIComponent(encodedId || "");
+  const config = serverConfigs.find((item) => item.id === id);
+
+  if (!config) {
+    showToast("Saved config not found", "error");
+    return;
+  }
+
+  renderServerForm(config);
+  syncServerSearchInput("");
+  selectedServerConfigId = config.id || "";
+  loadedServerConfigId = config.id || "";
+  loadedServerConfigName = config.name || "";
+  isServerConfigDropdownOpen = false;
+  renderActiveServerConfig();
+  renderServerConfigList();
+  renderActiveSummary();
+}
+
+function selectServerConfigOption(event, encodedId) {
+  if (event) {
+    event.preventDefault();
+  }
+
+  loadServerConfig(encodedId);
+}
+
+function getServerSuggestionContainerId(field, variationId = "") {
+  if (variationId) {
+    return `serverSuggestions_${variationId}_${field}`;
+  }
+
+  return field === "serverPath"
+    ? "serverPathSuggestions"
+    : "serverRootPathSuggestions";
+}
+
+function clearServerSuggestionList(field, variationId = "") {
+  const container = document.getElementById(
+    getServerSuggestionContainerId(field, variationId),
+  );
+
+  if (!container) {
+    return;
+  }
+
+  container.classList.add("hidden");
+  container.innerHTML = "";
+}
+
+function clearAllServerSuggestionLists() {
+  clearServerSuggestionList("serverPath");
+  clearServerSuggestionList("rootPath");
+  (serverState.variations || []).forEach((variation) => {
+    clearServerSuggestionList("jsPath", variation.id);
+    clearServerSuggestionList("cssPath", variation.id);
+  });
+}
+
+function getServerSuggestionInputElement(field, variationId = "") {
+  if (variationId) {
+    return document.querySelector(
+      `[data-server-variation-id="${variationId}"][data-server-field="${field}"]`,
+    );
+  }
+
+  if (field === "serverPath") {
+    return document.getElementById("serverPath");
+  }
+
+  if (field === "rootPath") {
+    return document.getElementById("serverRootPath");
+  }
+
+  return null;
+}
+
+function hideServerSuggestionsOnBlur(field, variationId = "") {
+  window.setTimeout(() => {
+    const activeElement = document.activeElement;
+    const container = document.getElementById(
+      getServerSuggestionContainerId(field, variationId),
+    );
+    const input = getServerSuggestionInputElement(field, variationId);
+
+    if (container && activeElement && container.contains(activeElement)) {
+      return;
+    }
+
+    if (input && activeElement === input) {
+      return;
+    }
+
+    clearServerSuggestionList(field, variationId);
+  }, 120);
+}
+
+function renderServerSuggestionList(field, suggestions, variationId = "") {
+  const container = document.getElementById(
+    getServerSuggestionContainerId(field, variationId),
+  );
+
+  if (!container) {
+    return;
+  }
+
+  if (!suggestions.length) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    return;
+  }
+
+  container.classList.remove("hidden");
+  container.innerHTML = suggestions
+    .map(
+      (suggestion) =>
+        `<button type="button" class="suggestion-chip" title="${escapeHtml(suggestion.label)}" onclick="applyServerSuggestion('${encodeURIComponent(field || "")}', '${encodeURIComponent(suggestion.value || "")}', '${encodeURIComponent(variationId || "")}')">${escapeHtml(suggestion.label)}</button>`,
+    )
+    .join("");
+}
+
+function requestServerSuggestions(field, kind, variationId = "") {
+  const currentValue =
+    variationId && ["jsPath", "cssPath"].includes(field)
+      ? serverState.variations.find((item) => item.id === variationId)?.[field] || ""
+      : getServerInput(field === "rootPath" ? "serverRootPath" : field);
+
+  vscode.postMessage({
+    command: "getServerLocationSuggestions",
+    field,
+    kind,
+    variationId,
+    currentValue,
+    basePath:
+      variationId && ["jsPath", "cssPath"].includes(field)
+        ? getServerInput("serverRootPath")
+        : getServerInput("serverPath"),
+  });
+}
+
+function collectServerActionErrors(config, options = {}) {
+  const { includeDuplicateName = false } = options;
+  const errors = validateServerForm(config);
+
+  if (includeDuplicateName) {
+    const duplicateNameError = validateServerConfigNameUniqueness(config);
+    if (duplicateNameError) {
+      errors.push(duplicateNameError);
+    }
+  }
+
+  return errors;
+}
+
+function showServerActionErrors(actionLabel, errors, title) {
+  setServerErrors(errors, title);
+  showToast(`Complete the required server details before ${actionLabel}`, "error");
+}
+
+function applyServerSuggestion(encodedField, encodedValue, encodedVariationId = "") {
+  const field = decodeURIComponent(encodedField || "");
+  const value = decodeURIComponent(encodedValue || "");
+  const variationId = decodeURIComponent(encodedVariationId || "");
+
+  if (variationId && ["jsPath", "cssPath"].includes(field)) {
+    updateServerVariation(variationId, field, value);
+    renderServerVariations();
+    clearServerSuggestionList(field, variationId);
+  } else if (field === "serverPath") {
+    setServerInput("serverPath", value);
+    updateServerStateFromForm();
+    clearServerSuggestionList("serverPath");
+  } else if (field === "rootPath") {
+    setServerInput("serverRootPath", value);
+    updateServerStateFromForm();
+    clearServerSuggestionList("rootPath");
+  }
+
+  renderActiveSummary();
+}
+
+function pickServerLocation(field, kind, variationId = "") {
+  const currentValue =
+    variationId && ["jsPath", "cssPath"].includes(field)
+      ? serverState.variations.find((item) => item.id === variationId)?.[field] || ""
+      : getServerInput(field === "rootPath" ? "serverRootPath" : field);
+
+  vscode.postMessage({
+    command: "pickServerLocation",
+    field,
+    kind,
+    variationId,
+    currentValue,
+    basePath:
+      variationId && ["jsPath", "cssPath"].includes(field)
+        ? getServerInput("serverRootPath")
+        : getServerInput("serverPath"),
+  });
+}
+
+function renderServerDomains() {
+  const container = document.getElementById("serverDomains");
+
+  if (!container) {
+    return;
+  }
+
+  const domains = serverState.domains?.length ? serverState.domains : [""];
+  container.className = "domain-list";
+  container.innerHTML = domains
+    .map(
+      (domain, index) => `
+        <div class="domain-row">
+          <input
+            value="${escapeHtml(domain)}"
+            placeholder="example.com"
+            oninput="updateServerDomain(${index}, this.value)"
+          />
+          <button
+            type="button"
+            class="domain-remove"
+            onclick="removeServerDomain(${index})"
+            title="Remove domain"
+          >
+            x
+          </button>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function addServerDomain() {
+  const domains = serverState.domains || [];
+  const hasEmptyDomain = domains.some((domain) => !String(domain || "").trim());
+
+  if (hasEmptyDomain) {
+    showToast("Fill the current empty domain before adding another one", "error");
+    return;
+  }
+
+  serverState.domains = [...(serverState.domains || []), ""];
+  renderServerDomains();
+  updateServerActions();
+  saveWebviewState();
+}
+
+function updateServerDomain(index, value) {
+  if (!Array.isArray(serverState.domains)) {
+    serverState.domains = [];
+  }
+
+  serverState.domains[index] = value;
+  updateServerActions();
+  saveWebviewState();
+}
+
+function removeServerDomain(index) {
+  if (!Array.isArray(serverState.domains)) {
+    serverState.domains = [];
+  }
+
+  serverState.domains = serverState.domains.filter((_, itemIndex) => itemIndex !== index);
+  if (!serverState.domains.length) {
+    serverState.domains = [""];
+  }
+  renderServerDomains();
+  updateServerActions();
+  saveWebviewState();
+}
+
+function renderServerVariations() {
+  const container = document.getElementById("serverVariations");
+
+  if (!container) {
+    return;
+  }
+
+  if (!serverState.variations.length) {
+    container.innerHTML = '<div class="dropdown-empty">No variations added</div>';
+    return;
+  }
+
+  container.innerHTML = serverState.variations
+    .map(
+      (variation, index) => `
+        <div class="variation-card">
+          <div class="section">
+            <label>Name</label>
+            <input
+              value="${escapeHtml(variation.name)}"
+              oninput="updateServerVariation('${variation.id}', 'name', this.value)"
+              placeholder="Variation ${index + 1}"
+            />
+          </div>
+          <div class="section">
+            <label>JS File Path</label>
+            <div class="inline-field">
+              <input
+                value="${escapeHtml(variation.jsPath)}"
+                oninput="updateServerVariation('${variation.id}', 'jsPath', this.value)"
+                onfocus="requestServerSuggestions('jsPath', 'file', '${variation.id}')"
+                onblur="hideServerSuggestionsOnBlur('jsPath', '${variation.id}')"
+                data-server-field="jsPath"
+                data-server-variation-id="${variation.id}"
+                placeholder="/src/v1/v1.js"
+              />
+              <button
+                type="button"
+                class="secondary-button compact-button"
+                onclick="pickServerLocation('jsPath', 'file', '${variation.id}')"
+              >
+                Browse
+              </button>
+            </div>
+            <div id="serverSuggestions_${variation.id}_jsPath" class="path-suggestions hidden"></div>
+          </div>
+          <div class="section">
+            <label>CSS File Path</label>
+            <div class="inline-field">
+              <input
+                value="${escapeHtml(variation.cssPath)}"
+                oninput="updateServerVariation('${variation.id}', 'cssPath', this.value)"
+                onfocus="requestServerSuggestions('cssPath', 'file', '${variation.id}')"
+                onblur="hideServerSuggestionsOnBlur('cssPath', '${variation.id}')"
+                data-server-field="cssPath"
+                data-server-variation-id="${variation.id}"
+                placeholder="/src/components/file.css"
+              />
+              <button
+                type="button"
+                class="secondary-button compact-button"
+                onclick="pickServerLocation('cssPath', 'file', '${variation.id}')"
+              >
+                Browse
+              </button>
+            </div>
+            <div id="serverSuggestions_${variation.id}_cssPath" class="path-suggestions hidden"></div>
+          </div>
+          <button type="button" class="secondary-button" onclick="removeServerVariation('${variation.id}')">Remove Variation</button>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function updateServerStateFromForm() {
+  serverState.name = getServerInput("serverConfigName");
+  serverState.serverPath = getServerInput("serverPath");
+  serverState.rootPath = getServerInput("serverRootPath");
+  serverState.domains = (serverState.domains || []).map((domain) => String(domain || ""));
+  updateServerActions();
+  renderActiveServerConfig();
+  renderActiveSummary();
+  saveWebviewState();
+}
+
+function prepareServerConfigForPersist() {
+  const config = collectServerConfigFromForm();
+  const normalizedName = config.name.trim().toLowerCase();
+  const normalizedLoadedName = loadedServerConfigName.trim().toLowerCase();
+  const isRenamedLoadedConfig =
+    Boolean(loadedServerConfigId)
+    && Boolean(loadedServerConfigName)
+    && normalizedName !== normalizedLoadedName;
+
+  return {
+    config: {
+      ...config,
+      id: isRenamedLoadedConfig ? "" : config.id,
+    },
+    isUpdatingExistingConfig:
+      Boolean(loadedServerConfigId)
+      && Boolean(loadedServerConfigName)
+      && normalizedName === normalizedLoadedName,
+  };
+}
+
+function updateServerToggle(field, value) {
+  if (!["clubJsCss", "minimize"].includes(field)) {
+    return;
+  }
+
+  serverState[field] = Boolean(value);
+  updateServerActions();
+  saveWebviewState();
+}
+
+function updateServerVariation(id, field, value) {
+  const variation = serverState.variations.find((item) => item.id === id);
+
+  if (variation && ["name", "jsPath", "cssPath"].includes(field)) {
+    variation[field] = value;
+    updateServerActions();
+    saveWebviewState();
+  }
+}
+
+function addServerVariation() {
+  serverState.variations.push(createServerVariation());
+  renderServerVariations();
+  updateServerActions();
+  saveWebviewState();
+}
+
+function removeServerVariation(id) {
+  serverState.variations = serverState.variations.filter(
+    (variation) => variation.id !== id,
+  );
+  renderServerVariations();
+  updateServerActions();
+  saveWebviewState();
+}
+
+function saveServerConfig() {
+  const { config, isUpdatingExistingConfig } = prepareServerConfigForPersist();
+  const errors = collectServerActionErrors(config, {
+    includeDuplicateName: true,
+  });
+
+  if (errors.length) {
+    showServerActionErrors(
+      "saving this config",
+      errors,
+      "Unable to save server config:",
+    );
+    return;
+  }
+
+  const actionText = isUpdatingExistingConfig
+    ? `Update saved config "${config.name}" (${loadedServerConfigId})?`
+    : `Save "${config.name}" as a new server config?`;
+
+  openModal(actionText, () => {
+    vscode.postMessage({
+      command: "saveServerConfig",
+      config,
+    });
+  }, "Confirm Save");
+}
+
+function runServer() {
+  const { config } = prepareServerConfigForPersist();
+  const errors = collectServerActionErrors(config, {
+    includeDuplicateName: true,
+  });
+
+  if (errors.length) {
+    showServerActionErrors(
+      "running the server",
+      errors,
+      "Unable to run the server with this config:",
+    );
+    return;
+  }
+
+  vscode.postMessage({
+    command: "runServer",
+    config,
+  });
+}
+
+function previewServerConfig() {
+  const { config } = prepareServerConfigForPersist();
+  const errors = collectServerActionErrors(config);
+
+  if (errors.length) {
+    showServerActionErrors(
+      "opening the config preview",
+      errors,
+      "Unable to preview this server config:",
+    );
+    return;
+  }
+
+  vscode.postMessage({
+    command: "previewServerConfig",
+    config,
+  });
+}
+
+function openServerConfigClearModal() {
+  document.getElementById("serverConfigClearModal").classList.remove("hidden");
+}
+
+function closeServerConfigClearModal() {
+  document.getElementById("serverConfigClearModal").classList.add("hidden");
+}
+
+function clearCurrentServerConfig() {
+  closeServerConfigClearModal();
+
+  if (!selectedServerConfigId) {
+    const preservedServerPath = serverState.serverPath || getServerInput("serverPath");
+    serverState = createDefaultServerConfig();
+    serverState.serverPath = preservedServerPath || "";
+    selectedServerConfigId = "";
+    renderServerView();
+    renderActiveSummary();
+    saveWebviewState();
+    showToast("Cleared current server form", "success");
+    return;
+  }
+
+  vscode.postMessage({
+    command: "clearServerConfig",
+    id: selectedServerConfigId,
+  });
+}
+
+function clearAllServerConfigs() {
+  closeServerConfigClearModal();
+  vscode.postMessage({ command: "clearAllServerConfigs" });
+}
+
 window.addEventListener("message", ({ data }) => {
   if (data.type === "files") {
-    if (isImageUploadActive()) {
+    if (isImageUploadActive() || isServerActive()) {
       return;
     }
 
@@ -1289,6 +2193,147 @@ window.addEventListener("message", ({ data }) => {
       resetFormState();
       showToast("Cleared all saved data", "success");
       break;
+
+    case "serverConfigsLoaded":
+      serverConfigs = data.configs || [];
+      if (serverState.name) {
+        const matchingCurrentConfig = serverState.id
+          ? serverConfigs.find((config) => config.id === serverState.id)
+          : null;
+        const matchingByName = !matchingCurrentConfig
+          ? serverConfigs.find(
+            (config) =>
+              config.name.trim().toLowerCase() === serverState.name.trim().toLowerCase(),
+          )
+          : null;
+        const resolvedCurrentConfig = matchingCurrentConfig || matchingByName;
+
+        if (resolvedCurrentConfig) {
+          serverState = createEmptyServerConfig({
+            ...serverState,
+            id: resolvedCurrentConfig.id || "",
+          });
+          selectedServerConfigId = resolvedCurrentConfig.id || "";
+          loadedServerConfigId = resolvedCurrentConfig.id || "";
+          loadedServerConfigName = resolvedCurrentConfig.name || "";
+        }
+      }
+      if (data.lastConfigId && !serverState.serverPath) {
+        const lastConfig = serverConfigs.find((config) => config.id === data.lastConfigId);
+        if (lastConfig) {
+          serverState = createEmptyServerConfig(lastConfig);
+          selectedServerConfigId = lastConfig.id || "";
+          loadedServerConfigId = lastConfig.id || "";
+          loadedServerConfigName = lastConfig.name || "";
+        }
+      }
+      if (isServerActive()) {
+        renderServerView();
+      }
+      break;
+
+    case "serverConfigSaved":
+      serverConfigs = data.configs || [];
+      serverState = createEmptyServerConfig(data.config || serverState);
+      selectedServerConfigId = serverState.id || "";
+      loadedServerConfigId = serverState.id || "";
+      loadedServerConfigName = serverState.name || "";
+      syncServerSearchInput("");
+      isServerConfigDropdownOpen = false;
+      renderServerView();
+      renderActiveSummary();
+      showToast(data.message || "Server config saved", "success");
+      break;
+
+    case "serverLocationPicked": {
+      const { field, path, variationId } = data;
+      if (variationId && ["jsPath", "cssPath"].includes(field)) {
+        updateServerVariation(variationId, field, path || "");
+        renderServerVariations();
+        clearServerSuggestionList(field, variationId);
+      } else if (field === "serverPath") {
+        setServerInput("serverPath", path || "");
+        updateServerStateFromForm();
+        clearServerSuggestionList("serverPath");
+      } else if (field === "rootPath") {
+        setServerInput("serverRootPath", path || "");
+        updateServerStateFromForm();
+        clearServerSuggestionList("rootPath");
+      }
+      renderActiveSummary();
+      break;
+    }
+
+    case "serverLocationSuggestions":
+      renderServerSuggestionList(
+        data.field,
+        data.suggestions || [],
+        data.variationId || "",
+      );
+      break;
+
+    case "serverValidationError":
+      setServerErrors(
+        data.errors || [data.message || "Server validation failed"],
+        data.title || "Server validation failed",
+      );
+      showToast(data.message || "Server validation failed", "error");
+      break;
+
+    case "serverRunning":
+      serverConfigs = data.configs || serverConfigs;
+      serverState = createEmptyServerConfig(data.config || serverState);
+      selectedServerConfigId = serverState.id || "";
+      loadedServerConfigId = serverState.id || "";
+      loadedServerConfigName = serverState.name || "";
+      isServerConfigDropdownOpen = false;
+      renderServerView();
+      renderActiveSummary();
+      showToast(data.message || "Server started", "success");
+      break;
+
+    case "serverConfigPreviewed":
+      serverState = createEmptyServerConfig(data.config || serverState);
+      selectedServerConfigId = serverState.id || "";
+      loadedServerConfigId = serverState.id || "";
+      loadedServerConfigName = serverState.name || "";
+      isServerConfigDropdownOpen = false;
+      renderServerView();
+      renderActiveSummary();
+      showToast(data.message || "Config preview opened", "success");
+      break;
+
+    case "serverConfigCleared":
+      serverConfigs = data.configs || [];
+      {
+        const preservedServerPath = serverState.serverPath || getServerInput("serverPath");
+        serverState = createDefaultServerConfig();
+        serverState.serverPath = preservedServerPath || "";
+      }
+      selectedServerConfigId = "";
+      resetLoadedServerConfigTracking();
+      syncServerSearchInput("");
+      isServerConfigDropdownOpen = false;
+      renderServerView();
+      renderActiveSummary();
+      showToast(data.message || "Server config cleared", "success");
+      break;
+
+    case "allServerConfigsCleared":
+      serverConfigs = [];
+      {
+        const preservedServerPath = serverState.serverPath || getServerInput("serverPath");
+        serverState = createDefaultServerConfig();
+        serverState.serverPath = preservedServerPath || "";
+      }
+      selectedServerConfigId = "";
+      resetLoadedServerConfigTracking();
+      syncServerSearchInput("");
+      isServerConfigDropdownOpen = false;
+      renderServerView();
+      renderActiveSummary();
+      showToast(data.message || "All server configs cleared", "success");
+      break;
   }
 });
 
@@ -1478,7 +2523,8 @@ function removeFile(fsPath) {
   saveConfig();
 }
 
-function openModal(text, callback) {
+function openModal(text, callback, title = "Confirm Action") {
+  document.getElementById("confirmTitle").innerText = title;
   document.getElementById("confirmText").innerText = text;
   document.getElementById("confirmModal").classList.remove("hidden");
   pendingSubmit = callback;
@@ -1514,13 +2560,46 @@ function confirmSubmit() {
 
 document.getElementById("apiKey").addEventListener("input", saveConfig);
 document.getElementById("accountId").addEventListener("input", () => {
+  if (isServerActive()) {
+    return;
+  }
+
   getActiveProjectContext().accountId = get("accountId");
   saveConfig();
+});
+["serverConfigName", "serverPath", "serverRootPath"].forEach((id) => {
+  const element = document.getElementById(id);
+  if (!element) {
+    return;
+  }
+
+  element.addEventListener("input", updateServerStateFromForm);
+  element.addEventListener("focus", closeServerConfigDropdown);
+  if (id === "serverPath") {
+    element.addEventListener("blur", () => hideServerSuggestionsOnBlur("serverPath"));
+  }
+  if (id === "serverRootPath") {
+    element.addEventListener("blur", () => hideServerSuggestionsOnBlur("rootPath"));
+  }
+});
+["click", "focus"].forEach((eventName) => {
+  document.getElementById("serverPath").addEventListener(eventName, () => {
+    requestServerSuggestions("serverPath", "folder");
+  });
+  document.getElementById("serverRootPath").addEventListener(eventName, () => {
+    requestServerSuggestions("rootPath", "folder");
+  });
+});
+document.getElementById("serverConfigSearch").addEventListener("blur", () => {
+  setTimeout(() => {
+    closeServerConfigDropdown();
+  }, 120);
 });
 
 window.addSession = addSession;
 window.switchSession = switchSession;
 window.removeSession = removeSession;
+window.switchServerTab = switchServerTab;
 window.handleAuthBtn = handleAuthBtn;
 window.openClientIdModal = openClientIdModal;
 window.loadProjects = loadProjects;
@@ -1541,5 +2620,28 @@ window.confirmSubmit = confirmSubmit;
 window.closeModal = closeModal;
 window.saveClientId = saveClientId;
 window.closeClientIdModal = closeClientIdModal;
+window.pickServerLocation = pickServerLocation;
+window.loadServerConfig = loadServerConfig;
+window.applyServerSuggestion = applyServerSuggestion;
+window.requestServerSuggestions = requestServerSuggestions;
+window.hideServerSuggestionsOnBlur = hideServerSuggestionsOnBlur;
+window.updateServerToggle = updateServerToggle;
+window.updateServerVariation = updateServerVariation;
+window.addServerVariation = addServerVariation;
+window.removeServerVariation = removeServerVariation;
+window.addServerDomain = addServerDomain;
+window.updateServerDomain = updateServerDomain;
+window.removeServerDomain = removeServerDomain;
+window.saveServerConfig = saveServerConfig;
+window.previewServerConfig = previewServerConfig;
+window.runServer = runServer;
+window.renderServerConfigList = renderServerConfigList;
+window.openServerConfigDropdown = openServerConfigDropdown;
+window.updateServerConfigSearch = updateServerConfigSearch;
+window.selectServerConfigOption = selectServerConfigOption;
+window.openServerConfigClearModal = openServerConfigClearModal;
+window.closeServerConfigClearModal = closeServerConfigClearModal;
+window.clearCurrentServerConfig = clearCurrentServerConfig;
+window.clearAllServerConfigs = clearAllServerConfigs;
 
 initSessions();

@@ -2,7 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.0.5] - Latest
+## [0.0.7] - Latest
+
+### Added
+
+- Added a dedicated `Server` tab for local variation bundling and preview flow. Requires AB Codeflame server.
+- Added reusable saved server configs with generated ids, search, new-config flow, clear options, and save confirmation.
+- Added config preview support that writes and opens the generated `config.json` before running the server.
+- Added path suggestions from currently open editor files for server folder, root/test folder, and variation entry files.
+
+### Improved
+
+- Improved server path handling for absolute paths, workspace-relative paths, and root-relative variation asset paths.
+- Improved server validation, user-facing errors, and action feedback for save, preview, and run flows.
+- Improved server domains input with add/remove controls and stricter empty-row handling.
+
+### Fixed
+
+- Fixed server tab state, saved-config selection, active-config tracking, and search/dropdown behavior.
+- Fixed server config storage so saved entries use unique generated ids instead of config names.
+- Fixed server output/config generation to align with the AB Codeflame server config structure under `experiments[0]`.
+- Fixed macOS validation failures for JS/CSS paths selected from server suggestions or the file picker.
+- Fixed server reset flows so `Server Folder Path` stays persisted across new-config and clear actions unless changed manually.
+
+## [0.0.5]
 
 ### Added
 

@@ -1,8 +1,8 @@
 {
   "name": "convert-vscode-extension",
   "displayName": "Convert VSCode Extension",
-  "description": "Upload JS, CSS, and images to Convert.com projects and variations",
-  "version": "0.0.5",
+  "description": "Upload JS, CSS, images, and AB Codeflame server configs from VS Code",
+  "version": "0.0.7",
   "publisher": "ShreyashSingh101",
   "engines": {
     "vscode": "^1.80.0"

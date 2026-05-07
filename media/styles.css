@@ -270,6 +270,14 @@ button:active {
   background: var(--vscode-editor-background);
 }
 
+.server-view {
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  background: var(--vscode-editor-background);
+}
+
 .image-upload-view button {
   margin-top: 4px;
   margin-bottom: 8px;
@@ -356,6 +364,238 @@ button:active {
 
 .status-pending {
   color: var(--vscode-descriptionForeground);
+}
+
+.server-header {
+  margin-bottom: 12px;
+}
+
+.server-note {
+  margin-top: 6px;
+  color: var(--vscode-testing-iconFailed, #d16969);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.server-note strong {
+  font-weight: 700;
+}
+
+.server-errors {
+  padding: 8px;
+  margin-bottom: 12px;
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+  border-radius: 4px;
+  background: var(--vscode-inputValidation-errorBackground, #3a1d1d);
+  color: var(--vscode-inputValidation-errorForeground, var(--vscode-foreground));
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.server-errors strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.inline-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+
+.compact-button {
+  width: auto;
+  margin: 0;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+.path-suggestions {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.suggestion-chip {
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 999px;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestion-chip:hover {
+  color: var(--vscode-foreground);
+}
+
+.radio-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.radio-option {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 0 !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: var(--vscode-foreground) !important;
+}
+
+.radio-option input {
+  width: auto;
+  margin: 0;
+}
+
+.saved-config-list {
+  margin-top: 6px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.active-server-config {
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-sideBar-background) 12%);
+  color: var(--vscode-foreground);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.active-server-config strong {
+  margin-right: 8px;
+}
+
+.active-server-config code {
+  font-size: 10px;
+  background: transparent;
+  padding: 0;
+}
+
+.saved-config-item,
+.variation-card {
+  background: var(--vscode-editor-background);
+}
+
+.saved-config-item {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.saved-config-item.active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.saved-config-item:last-child {
+  border-bottom: none;
+}
+
+.saved-config-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.saved-config-item button {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.saved-config-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.saved-config-option code {
+  font-size: 10px;
+  opacity: 0.85;
+  background: transparent;
+  padding: 0;
+}
+
+.saved-config-item button {
+  all: unset;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+}
+
+.server-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.server-section-header label {
+  margin-bottom: 0 !important;
+}
+
+.variation-card {
+  padding: 8px;
+  margin-bottom: 8px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+}
+
+.variation-card:last-child {
+  margin-bottom: 0;
+}
+
+.variation-card .section {
+  margin-bottom: 8px;
+}
+
+.variation-card button {
+  margin: 0;
+}
+
+.domain-list {
+  display: grid;
+  gap: 8px;
+}
+
+.domain-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.domain-remove {
+  width: auto;
+  margin: 0;
+  padding: 5px 8px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid var(--vscode-input-border);
+}
+
+.domain-remove:hover {
+  color: var(--vscode-foreground);
 }
 
 /* ── Divider ────────────────────────────────── */

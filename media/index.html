@@ -37,7 +37,7 @@
       <p style="margin:0">Connected via Convert OAuth</p>
     </div>
 
-    <div class="section">
+    <div id="authActionSection" class="section">
       <button id="authBtn" onclick="handleAuthBtn()">Login with Convert</button>
     </div>
 
@@ -75,6 +75,181 @@
       </button>
 
       <div id="multipleImageTable" class="image-table-wrap"></div>
+    </div>
+
+    <div id="serverView" class="server-view hidden">
+      <div class="server-header">
+        <h3>Server</h3>
+        <div class="server-note">
+          <strong>NOTE:</strong> Requires AB Codeflame server
+        </div>
+      </div>
+
+      <div id="serverErrors" class="server-errors hidden"></div>
+
+      <div class="section">
+        <label for="serverConfigSearch">Saved Configs</label>
+        <input
+          id="serverConfigSearch"
+          placeholder="Type to filter configs"
+          oninput="updateServerConfigSearch(this.value)"
+          onfocus="openServerConfigDropdown()"
+          onclick="openServerConfigDropdown()"
+        />
+        <div id="activeServerConfig" class="active-server-config hidden"></div>
+        <div id="serverConfigList" class="saved-config-list"></div>
+      </div>
+
+      <div class="section">
+        <label for="serverConfigName">Config Name</label>
+        <div class="inline-field">
+          <input id="serverConfigName" placeholder="My local server config" />
+          <button
+            type="button"
+            class="secondary-button compact-button"
+            onclick="startNewServerConfig()"
+          >
+            New Config
+          </button>
+        </div>
+      </div>
+
+      <div class="section">
+        <label for="serverPath">Server Folder Path</label>
+        <div class="inline-field">
+          <input id="serverPath" placeholder="Path to AB Codeflame Server" />
+          <button
+            type="button"
+            class="secondary-button compact-button"
+            onclick="pickServerLocation('serverPath', 'folder')"
+          >
+            Browse
+          </button>
+        </div>
+        <div id="serverPathSuggestions" class="path-suggestions hidden"></div>
+      </div>
+
+      <div class="section">
+        <label for="serverRootPath">Root/Test Folder Path</label>
+        <div class="inline-field">
+          <input
+            id="serverRootPath"
+            placeholder="Experiment root folder"
+          />
+          <button
+            type="button"
+            class="secondary-button compact-button"
+            onclick="pickServerLocation('rootPath', 'folder')"
+          >
+            Browse
+          </button>
+        </div>
+        <div id="serverRootPathSuggestions" class="path-suggestions hidden"></div>
+      </div>
+
+      <div class="section">
+        <div class="server-section-header">
+          <label>Domains</label>
+          <button
+            type="button"
+            class="secondary-button compact-button"
+            onclick="addServerDomain()"
+          >
+            Add Domain
+          </button>
+        </div>
+        <div id="serverDomains"></div>
+      </div>
+
+      <div class="section">
+        <label>clubJsCss</label>
+        <div class="radio-row">
+          <label class="radio-option">
+            <input
+              type="radio"
+              name="serverClubJsCss"
+              value="true"
+              onchange="updateServerToggle('clubJsCss', true)"
+            />
+            <span>True</span>
+          </label>
+          <label class="radio-option">
+            <input
+              type="radio"
+              name="serverClubJsCss"
+              value="false"
+              onchange="updateServerToggle('clubJsCss', false)"
+            />
+            <span>False</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <label>minimize</label>
+        <div class="radio-row">
+          <label class="radio-option">
+            <input
+              type="radio"
+              name="serverMinimize"
+              value="true"
+              onchange="updateServerToggle('minimize', true)"
+            />
+            <span>True</span>
+          </label>
+          <label class="radio-option">
+            <input
+              type="radio"
+              name="serverMinimize"
+              value="false"
+              onchange="updateServerToggle('minimize', false)"
+            />
+            <span>False</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="server-section-header">
+          <label>Variations</label>
+          <button
+            type="button"
+            class="secondary-button compact-button"
+            onclick="addServerVariation()"
+          >
+            Add Variation
+          </button>
+        </div>
+        <div id="serverVariations"></div>
+      </div>
+
+      <div class="button-row">
+        <button id="saveServerConfigBtn" onclick="saveServerConfig()">
+          Save Config
+        </button>
+        <button
+          id="previewServerConfigBtn"
+          class="secondary-button"
+          onclick="previewServerConfig()"
+        >
+          Preview Config
+        </button>
+        <button
+          id="runServerBtn"
+          class="secondary-button"
+          onclick="runServer()"
+        >
+          Run Server
+        </button>
+      </div>
+
+      <button
+        id="clearServerConfigsBtn"
+        class="secondary-button image-clear"
+        onclick="openServerConfigClearModal()"
+      >
+        Clear Configs
+      </button>
     </div>
 
     <div id="experienceSection" class="section">
@@ -134,14 +309,14 @@
 
     <footer>
       <p>
-        By <a href="https://github.com/shreyashsingh-101" target="_blank">SS</a>. <a href="https://github.com/shreyashsingh-101/convert-vscode-extension" target="_blank">v0.0.5</a>
+        By <a href="https://github.com/shreyashsingh-101" target="_blank">SS</a>. <a href="https://github.com/shreyashsingh-101/convert-vscode-extension" target="_blank">v0.0.7</a>
       </p>
     </footer>
 
     <!-- Confirmation Modal -->
     <div id="confirmModal" class="modal hidden">
       <div class="modal-content">
-        <h3>Confirm Push</h3>
+        <h3 id="confirmTitle">Confirm Action</h3>
 
         <p id="confirmText"></p>
 
@@ -197,6 +372,24 @@
         <div class="modal-actions">
           <button onclick="saveClientId()">Save</button>
           <button onclick="closeClientIdModal()" class="secondary">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="serverConfigClearModal" class="modal hidden">
+      <div class="modal-content">
+        <h3>Clear Server Configs</h3>
+
+        <p>Choose what to clear.</p>
+
+        <div class="modal-actions stacked-actions">
+          <button onclick="clearCurrentServerConfig()">Clear Current</button>
+          <button onclick="clearAllServerConfigs()" class="danger">
+            Clear All Stored
+          </button>
+          <button onclick="closeServerConfigClearModal()" class="secondary">
             Cancel
           </button>
         </div>
