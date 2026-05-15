@@ -16,6 +16,10 @@ import {
   CreateLocationPayload,
   convertApi,
 } from "../services/convertAPI";
+import {
+  ActiveSelectionState,
+  SessionStore,
+} from "../services/session/sessionStore";
 
 type WebviewLike = Pick<vscode.Webview, "postMessage">;
 
@@ -1816,9 +1820,24 @@ export async function handleMessage(
   webview: WebviewLike,
   fileStore?: { clear?: () => void; getAll: () => vscode.Uri[] },
   context?: vscode.ExtensionContext,
+  sessionStore?: SessionStore,
 ) {
   try {
     switch (message.command) {
+      case "restartMcpServer": {
+        await vscode.commands.executeCommand("convert.restartMcpServer");
+        await webview.postMessage({
+          command: "success",
+          message: "MCP server restarted.",
+        });
+        break;
+      }
+
+      case "showMcpLogs": {
+        await vscode.commands.executeCommand("convert.showMcpLogs");
+        break;
+      }
+
       case "openCreateExperiment": {
         const accountId = asString(message.accountId);
         const projectId = asString(message.projectId);
@@ -1844,9 +1863,22 @@ export async function handleMessage(
             : {};
         const oauthToken = await getToken(context);
 
-        await context.globalState.update("convertConfig", {
-          ...data,
-          authMode: oauthToken ? "oauth" : data.authMode ?? "apikey",
+        const selection: ActiveSelectionState = {
+          apiKey: asString(data.apiKey) || null,
+          accountId: asString(data.accountId),
+          projectId: asString(data.projectId) || null,
+          experienceId: asString(data.experienceId) || null,
+          variationId: asString(data.variationId) || null,
+          authMode: oauthToken
+            ? "oauth"
+            : asString(data.authMode) === "oauth"
+              ? "oauth"
+              : "apikey",
+        };
+
+        await context.globalState.update("convertConfig", selection);
+        await sessionStore?.updateSelection(selection, {
+          persist: false,
         });
         break;
       }
@@ -1879,9 +1911,18 @@ export async function handleMessage(
           context.globalState.get<Record<string, unknown>>("convertConfig") ??
           {};
 
-        await context.globalState.update("convertConfig", {
-          ...saved,
+        const selection: ActiveSelectionState = {
+          apiKey: asString(saved.apiKey) || null,
+          accountId: asString(saved.accountId),
+          projectId: asString(saved.projectId) || null,
+          experienceId: asString(saved.experienceId) || null,
+          variationId: asString(saved.variationId) || null,
           authMode: "apikey",
+        };
+
+        await context.globalState.update("convertConfig", selection);
+        await sessionStore?.updateSelection(selection, {
+          persist: false,
         });
 
         await webview.postMessage({ command: "oauthLogout" });
@@ -1937,6 +1978,20 @@ export async function handleMessage(
         await context.globalState.update("convertConfig", undefined);
         await context.workspaceState.update(SERVER_CONFIGS_KEY, undefined);
         await context.workspaceState.update(LAST_SERVER_CONFIG_KEY, undefined);
+        await sessionStore?.updateSelection(
+          {
+            authMode: "apikey",
+            apiKey: null,
+            accountId: "",
+            projectId: null,
+            projectName: "",
+            experienceId: null,
+            experienceName: "",
+            variationId: null,
+            variationName: "",
+          },
+          { persist: false },
+        );
         fileStore?.clear?.();
         await webview.postMessage({ command: "clearedAll" });
         break;
@@ -2183,6 +2238,17 @@ export async function handleMessage(
           sessionId: asString(message.sessionId),
           data: projects,
         });
+        sessionStore?.cacheProjects(
+          asString(message.accountId),
+          extractListItems(projects)
+            .map((item) => asRecord(item))
+            .filter((item): item is Record<string, unknown> => Boolean(item))
+            .map((item) => ({
+              id: String(item.id ?? ""),
+              name: asString(item.name) || String(item.id ?? ""),
+            }))
+            .filter((item) => item.id && item.name),
+        );
         break;
       }
 
@@ -2200,6 +2266,17 @@ export async function handleMessage(
           sessionId: asString(message.sessionId),
           data: experiences,
         });
+        sessionStore?.cacheExperiences(
+          asString(message.projectId),
+          extractListItems(experiences)
+            .map((item) => asRecord(item))
+            .filter((item): item is Record<string, unknown> => Boolean(item))
+            .map((item) => ({
+              id: String(item.id ?? ""),
+              name: asString(item.name) || String(item.id ?? ""),
+            }))
+            .filter((item) => item.id && item.name),
+        );
         break;
       }
 
@@ -2232,6 +2309,10 @@ export async function handleMessage(
           sessionId: asString(message.sessionId),
           data: variationsData,
         });
+        sessionStore?.cacheVariations(
+          asString(message.experienceId),
+          variationsData,
+        );
         break;
       }
 

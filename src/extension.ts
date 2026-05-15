@@ -12,49 +12,13 @@ import {
   getToken,
 } from "./auth/convertAuth";
 import { CreateExperimentPanel } from "./panels/createExperiment/panel";
-
-interface ConvertConfig {
-  apiKey?: string | null;
-  accountId?: string;
-  projectId?: string | null;
-  experienceId?: string | null;
-  variationId?: string | null;
-  authMode?: "apikey" | "oauth";
-}
-
-class FileStore {
-  private files: vscode.Uri[] = [];
-  private listeners: ((uris: vscode.Uri[]) => void)[] = [];
-
-  add(uris: vscode.Uri[]) {
-    const existing = new Set(this.files.map((f) => f.fsPath));
-    const newUris = uris.filter((u) => !existing.has(u.fsPath));
-    this.files.push(...newUris);
-    this.notify(uris);
-  }
-
-  remove(fsPath: string) {
-    this.files = this.files.filter((f) => f.fsPath !== fsPath);
-    this.notify([]);
-  }
-
-  clear() {
-    this.files = [];
-    this.notify([]);
-  }
-
-  getAll(): vscode.Uri[] {
-    return [...this.files];
-  }
-
-  onChange(cb: (uris: vscode.Uri[]) => void) {
-    this.listeners.push(cb);
-  }
-
-  private notify(uris: vscode.Uri[]) {
-    this.listeners.forEach((cb) => cb([...uris]));
-  }
-}
+import { FileStore } from "./services/session/fileStore";
+import {
+  ActiveSelectionState,
+  SessionStore,
+} from "./services/session/sessionStore";
+import { registerConvertCommands } from "./commands/convertCommands";
+import { EmbeddedMcpServer } from "./services/mcp/server";
 
 class DropTreeProvider
   implements
@@ -124,8 +88,18 @@ class SidebarProvider implements vscode.WebviewViewProvider {
     private extensionUri: vscode.Uri,
     private store: FileStore,
     private context: vscode.ExtensionContext,
+    private sessionStore: SessionStore,
   ) {
     store.onChange((uris) => this.pushFiles(uris));
+    sessionStore.onDidChangeSelection((selection) => {
+      void this.pushSelection(selection);
+    });
+    sessionStore.onDidChangeMcpState((mcpState) => {
+      void this.view?.webview.postMessage({
+        command: "mcpStatus",
+        data: mcpState,
+      });
+    });
   }
 
   resolveWebviewView(view: vscode.WebviewView) {
@@ -153,7 +127,20 @@ class SidebarProvider implements vscode.WebviewViewProvider {
         return;
       }
 
-      void handleMessage(msg, view.webview, this.store, this.context);
+      void handleMessage(
+        msg,
+        view.webview,
+        this.store,
+        this.context,
+        this.sessionStore,
+      );
+    });
+  }
+
+  private async pushSelection(selection: ActiveSelectionState) {
+    await this.view?.webview.postMessage({
+      command: "selectionSync",
+      data: selection,
     });
   }
 
@@ -168,8 +155,7 @@ class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async restoreState(webview: vscode.Webview) {
-    const saved =
-      this.context.globalState.get<ConvertConfig>("convertConfig") ?? {};
+    const saved = this.sessionStore.getSelection();
     const oauthToken = await getToken(this.context);
     const clientId = await getClientId(this.context);
     const storedAccounts = oauthToken
@@ -186,6 +172,7 @@ class SidebarProvider implements vscode.WebviewViewProvider {
           id: String(account.account_id),
           name: account.name,
         })),
+        mcp: this.sessionStore.getMcpState(),
       },
     });
   }
@@ -238,6 +225,8 @@ class SidebarProvider implements vscode.WebviewViewProvider {
 
 export function activate(context: vscode.ExtensionContext) {
   const store = new FileStore();
+  const sessionStore = new SessionStore(context);
+  const mcpServer = new EmbeddedMcpServer(sessionStore, context);
   const dropProvider = new DropTreeProvider(store);
 
   const treeView = vscode.window.createTreeView("convertDropZone", {
@@ -245,7 +234,20 @@ export function activate(context: vscode.ExtensionContext) {
     dragAndDropController: dropProvider,
   });
 
-  const sidebar = new SidebarProvider(context.extensionUri, store, context);
+  const sidebar = new SidebarProvider(
+    context.extensionUri,
+    store,
+    context,
+    sessionStore,
+  );
+
+  void mcpServer.start().catch(async (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    await sessionStore.updateMcpState({
+      running: false,
+      lastError: message,
+    });
+  });
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("convertSidebar", sidebar, {
@@ -278,6 +280,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("convert.logout", async () => {
       await clearToken(context);
       vscode.window.showInformationMessage("Disconnected from Convert.");
+      await sessionStore.updateSelection({
+        authMode: "apikey",
+      });
     }),
   );
 
@@ -294,6 +299,23 @@ export function activate(context: vscode.ExtensionContext) {
       },
     ),
   );
+
+  context.subscriptions.push(
+    registerConvertCommands(context, {
+      context,
+      fileStore: store,
+      sessionStore,
+      getMcpConfigText: () => mcpServer.getConfigText(),
+      restartMcpServer: () => mcpServer.restart(),
+      showMcpLogs: () => mcpServer.showLogs(),
+    }),
+  );
+
+  context.subscriptions.push({
+    dispose: () => {
+      mcpServer.dispose();
+    },
+  });
 }
 
 export function deactivate() {}

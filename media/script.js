@@ -31,6 +31,13 @@ let isServerConfigDropdownOpen = false;
 let serverConfigSearchTerm = "";
 let loadedServerConfigId = "";
 let loadedServerConfigName = "";
+let mcpState = {
+  running: false,
+  port: null,
+  endpoint: "",
+  lastError: "",
+  configText: "",
+};
 
 function createServerVariation(seed = {}) {
   return {
@@ -136,6 +143,7 @@ function saveWebviewState() {
     uploadFileMemory,
     imageUploadState,
     serverState,
+    mcpState,
     apiKey: get("apiKey"),
   });
 }
@@ -171,6 +179,7 @@ function initSessions() {
     uploadFileMemory = saved.uploadFileMemory || {};
     imageUploadState = saved.imageUploadState || imageUploadState;
     serverState = createEmptyServerConfig(saved.serverState || {});
+    mcpState = saved.mcpState || mcpState;
     selectedServerConfigId = serverState.id || "";
     loadedServerConfigId = serverState.id || "";
     loadedServerConfigName = serverState.name || "";
@@ -184,6 +193,7 @@ function initSessions() {
   }
 
   renderSession();
+  renderMcpSection();
   vscode.postMessage({ command: "loadServerConfigs" });
   vscode.postMessage({ command: "getClientId" });
 }
@@ -344,7 +354,18 @@ function renderSession() {
   renderActiveSummary();
   updateCreateExperimentAction();
   updateCopyPreviewLinkAction();
+  renderMcpSection();
   saveWebviewState();
+}
+
+function renderMcpSection() {
+  const status = mcpState.running ? "Running" : "Stopped";
+  const errorSuffix = mcpState.lastError ? ` (${mcpState.lastError})` : "";
+
+  document.getElementById("mcpStatusLabel").textContent = `Status: ${status}${errorSuffix}`;
+  document.getElementById("mcpEndpoint").textContent = `Endpoint: ${mcpState.endpoint || "Unavailable"}`;
+  document.getElementById("mcpPort").textContent = `Port: ${mcpState.port || "Unavailable"}`;
+  document.getElementById("mcpConfigOutput").value = mcpState.configText || "";
 }
 
 function updateCreateExperimentAction() {
@@ -849,6 +870,33 @@ function openCreateExperiment() {
     accountId: session.accountId,
     projectId: session.projectId,
     projectName: session.projectName,
+  });
+}
+
+function getMcpConfig() {
+  if (!mcpState.configText) {
+    showToast("MCP config is not ready yet", "error");
+    return;
+  }
+
+  navigator.clipboard.writeText(mcpState.configText)
+    .then(() => {
+      showToast("MCP config copied to clipboard", "success");
+    })
+    .catch(() => {
+      showToast("Unable to copy MCP config", "error");
+    });
+}
+
+function restartMcpServer() {
+  vscode.postMessage({
+    command: "restartMcpServer",
+  });
+}
+
+function showMcpLogs() {
+  vscode.postMessage({
+    command: "showMcpLogs",
   });
 }
 
@@ -2058,6 +2106,7 @@ window.addEventListener("message", ({ data }) => {
       authMode = savedState?.authMode || restored.authMode || "apikey";
       accounts = restored.accounts || savedState?.accounts || [];
       clientId = restored.clientId || savedState?.clientId || "";
+      mcpState = restored.mcp || savedState?.mcpState || mcpState;
 
       if (!savedState?.sessions?.length && restored.accountId) {
         const session = getActiveSession();
@@ -2071,6 +2120,39 @@ window.addEventListener("message", ({ data }) => {
       renderSession();
       break;
     }
+
+    case "selectionSync": {
+      const session = getActiveSession();
+      const next = data.data || {};
+
+      if (!isImageUploadActive() && !isServerActive()) {
+        session.accountId = next.accountId || session.accountId || "";
+        session.projectId = next.projectId ?? session.projectId ?? null;
+        session.projectName = next.projectName || session.projectName || "";
+        session.experienceId = next.experienceId ?? session.experienceId ?? null;
+        session.experienceName = next.experienceName || session.experienceName || "";
+        session.variationId = next.variationId ?? session.variationId ?? null;
+        session.variationName = next.variationName || session.variationName || "";
+        renderSession();
+
+        if (session.accountId) {
+          set("accountId", session.accountId);
+        }
+        if (session.projectId) {
+          requestExperiences(session.projectId);
+        }
+        if (session.experienceId) {
+          requestVariations(session.experienceId);
+        }
+      }
+      break;
+    }
+
+    case "mcpStatus":
+      mcpState = data.data || mcpState;
+      renderMcpSection();
+      saveWebviewState();
+      break;
 
     case "accounts":
       accounts = data.data || [];
@@ -2771,6 +2853,9 @@ window.openClientIdModal = openClientIdModal;
 window.loadProjects = loadProjects;
 window.openCreateExperiment = openCreateExperiment;
 window.copyPreviewLink = copyPreviewLink;
+window.getMcpConfig = getMcpConfig;
+window.restartMcpServer = restartMcpServer;
+window.showMcpLogs = showMcpLogs;
 window.clearAll = clearAll;
 window.closeClearModal = closeClearModal;
 window.clearProjectDetails = clearProjectDetails;

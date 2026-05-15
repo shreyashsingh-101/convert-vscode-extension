@@ -13,7 +13,7 @@
     "type": "git",
     "url": "https://github.com/shreyashsingh-101/convert-vscode-extension"
   },
-  "activationEvents": [],
+  "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -45,6 +45,14 @@
       {
         "command": "convert.openCreateExperiment",
         "title": "Convert: Create Experiment"
+      },
+      {
+        "command": "convert.restartMcpServer",
+        "title": "Convert: Restart MCP Server"
+      },
+      {
+        "command": "convert.showMcpLogs",
+        "title": "Convert: Show MCP Logs"
       }
     ]
   },

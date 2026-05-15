@@ -56,7 +56,8 @@ h3 {
 /* ── Inputs & Selects ───────────────────────── */
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   padding: 5px 8px;
   background: var(--vscode-input-background);
@@ -70,7 +71,8 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--vscode-focusBorder);
 }
 
@@ -308,6 +310,14 @@ button:active {
   border: 1px solid var(--vscode-panel-border);
   border-radius: 4px;
   background: var(--vscode-editor-background);
+}
+
+#mcpConfigOutput {
+  min-height: 180px;
+  resize: vertical;
+  font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .image-upload-view button {

@@ -290,6 +290,42 @@
       </button>
     </div>
 
+    <div id="mcpSection" class="section">
+      <div class="server-header">
+        <h3>AI / MCP</h3>
+        <div class="server-note">Embedded local MCP server for AI clients</div>
+      </div>
+
+      <div class="editor-status">
+        <div id="mcpStatusLabel">Status: starting…</div>
+        <div id="mcpEndpoint">Endpoint: unavailable</div>
+        <div id="mcpPort">Port: unavailable</div>
+      </div>
+
+      <div class="button-row">
+        <button id="getMcpConfigBtn" onclick="getMcpConfig()">Get MCP Config</button>
+        <button
+          id="restartMcpServerBtn"
+          class="secondary-button"
+          onclick="restartMcpServer()"
+        >
+          Restart MCP Server
+        </button>
+        <button
+          id="showMcpLogsBtn"
+          class="secondary-button"
+          onclick="showMcpLogs()"
+        >
+          Show MCP Logs
+        </button>
+      </div>
+
+      <div class="section">
+        <label for="mcpConfigOutput">MCP Config</label>
+        <textarea id="mcpConfigOutput" rows="12" readonly></textarea>
+      </div>
+    </div>
+
     <hr class="workflow-only" />
 
     <div id="editorSection">
