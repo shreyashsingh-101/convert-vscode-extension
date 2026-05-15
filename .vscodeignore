@@ -1,6 +1,10 @@
 .vscode/**
 .vscode-test/**
 src/**
+!src/panels/
+!src/panels/createExperiment/
+!src/panels/createExperiment/script.js
+!src/panels/createExperiment/styles.css
 .gitignore
 .yarnrc
 vsc-extension-quickstart.md

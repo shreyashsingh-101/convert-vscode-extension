@@ -1,0 +1,471 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 32px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+.wizard-shell {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.wizard-header,
+.section-heading,
+.wizard-actions,
+.option-card-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+h1,
+h2,
+h3,
+p,
+dl,
+dt,
+dd {
+  margin: 0;
+}
+
+h1 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+p,
+small,
+.note,
+.option-detail-empty,
+.option-detail-description {
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.55;
+}
+
+.step-counter {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin: 28px 0 20px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  color: var(--vscode-descriptionForeground);
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 84%, transparent);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.step span {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.step.active,
+.step.done {
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-focusBorder);
+}
+
+.step.active {
+  background: color-mix(in srgb, var(--vscode-button-background) 10%, var(--vscode-sideBar-background) 90%);
+}
+
+.step.active span,
+.step.done span {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+.step:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error-box {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  color: var(--vscode-inputValidation-errorForeground, var(--vscode-foreground));
+  background: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+}
+
+.error-box ul {
+  margin: 8px 0 0 18px;
+  padding: 0;
+}
+
+.wizard-content {
+  min-height: 470px;
+  padding: 24px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 92%, transparent);
+}
+
+.content-intro {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 18px;
+}
+
+label {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 88px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  border-color: var(--vscode-focusBorder);
+}
+
+button {
+  padding: 9px 14px;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.secondary {
+  color: var(--vscode-foreground);
+  background: transparent;
+  border-color: var(--vscode-input-border);
+}
+
+.secondary:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.small {
+  padding: 6px 10px;
+}
+
+.success-action {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-button-background) 65%, transparent);
+}
+
+.section-stack,
+.asset-stack,
+.picker-list,
+.review-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.section-stack {
+  gap: 24px;
+}
+
+.content-section {
+  display: grid;
+  gap: 14px;
+}
+
+.subsection {
+  padding-top: 18px;
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.inline-actions,
+.search-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-row input {
+  flex: 1;
+}
+
+.dense-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.full-width {
+  grid-column: 1 / -1;
+}
+
+.option-card,
+.asset-card,
+.success-card {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 8px;
+  background: var(--vscode-editor-background);
+}
+
+.option-card {
+  padding: 14px;
+}
+
+.option-card.selected {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 35%, transparent);
+}
+
+.option-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-weight: 400;
+  flex: 1;
+}
+
+.option-check input {
+  width: auto;
+  margin-top: 2px;
+}
+
+.option-check-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.option-toggle {
+  flex-shrink: 0;
+}
+
+.option-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vscode-panel-border);
+  display: grid;
+  gap: 12px;
+}
+
+.option-detail-list {
+  display: grid;
+  gap: 10px;
+}
+
+.option-detail-list div {
+  display: grid;
+  gap: 4px;
+}
+
+.option-detail-list dt {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.option-detail-list dd {
+  color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+.picker-limit-note {
+  padding: 4px 2px 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.asset-card {
+  padding: 14px;
+}
+
+.asset-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.icon-button {
+  width: auto;
+  padding: 6px 10px;
+  color: var(--vscode-descriptionForeground);
+  background: transparent;
+  border-color: var(--vscode-input-border);
+}
+
+.icon-button:hover {
+  color: var(--vscode-foreground);
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+  color: var(--vscode-foreground);
+  font-size: 12px;
+}
+
+.empty {
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px dashed var(--vscode-panel-border);
+  color: var(--vscode-descriptionForeground);
+  background: color-mix(in srgb, var(--vscode-editor-background) 85%, transparent);
+}
+
+.compact-empty {
+  margin-top: 4px;
+}
+
+.hidden {
+  display: none;
+}
+
+.review-grid div {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.review-grid div:last-child {
+  border-bottom: none;
+}
+
+.review-grid span {
+  overflow-wrap: anywhere;
+}
+
+.success-state {
+  display: grid;
+  gap: 20px;
+}
+
+.success-card {
+  padding: 18px;
+  display: grid;
+  gap: 8px;
+  border-color: color-mix(in srgb, var(--vscode-button-background) 35%, var(--vscode-panel-border) 65%);
+}
+
+.success-badge {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-button-background) 18%, transparent);
+  color: var(--vscode-button-background);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.success-grid {
+  gap: 0;
+}
+
+.success-actions {
+  justify-content: flex-start;
+}
+
+.wizard-actions {
+  margin-top: 20px;
+}
+
+@media (max-width: 780px) {
+  body {
+    padding: 18px;
+  }
+
+  .steps {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-header,
+  .section-heading,
+  .wizard-actions,
+  .option-card-row,
+  .inline-actions,
+  .search-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dense-grid,
+  .review-grid div {
+    grid-template-columns: 1fr;
+  }
+}

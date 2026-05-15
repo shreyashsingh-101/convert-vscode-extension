@@ -40,7 +40,13 @@
           "icon": "/resources/icon.svg"
         }
       ]
-    }
+    },
+    "commands": [
+      {
+        "command": "convert.openCreateExperiment",
+        "title": "Convert: Create Experiment"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

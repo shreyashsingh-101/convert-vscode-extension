@@ -10,7 +10,12 @@ import {
   getToken,
   storeClientId,
 } from "../auth/convertAuth";
-import { convertApi } from "../services/convertAPI";
+import {
+  CreateExperimentPayload,
+  CreateGoalPayload,
+  CreateLocationPayload,
+  convertApi,
+} from "../services/convertAPI";
 
 type WebviewLike = Pick<vscode.Webview, "postMessage">;
 
@@ -46,6 +51,29 @@ interface ServerConfig {
 interface ServerLocationSuggestion {
   value: string;
   label: string;
+}
+
+interface CreatedExperiment {
+  id: string;
+  name: string;
+  url?: string;
+  summaryLink?: string;
+  apiLink?: string;
+}
+
+interface NormalizedCreateExperiment {
+  payload: CreateExperimentPayload;
+  newLocations: Array<{
+    name: string;
+    type: string;
+    value: string;
+    operator: string;
+    source: "url" | "javascript";
+  }>;
+  newGoals: Array<{
+    name: string;
+    description?: string;
+  }>;
 }
 
 const SERVER_CONFIGS_KEY = "convertServerConfigs";
@@ -93,6 +121,19 @@ function asStringArray(value: unknown): string[] {
 
 function asBoolean(value: unknown, fallback = false): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
 }
 
 function asServerConfig(value: unknown): ServerConfig {
@@ -1100,6 +1141,676 @@ async function postCdnUpdateToast(
   }
 }
 
+function extractListItems(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  const record = asRecord(payload);
+  if (Array.isArray(record?.data)) {
+    return record.data;
+  }
+
+  const nestedData = asRecord(record?.data);
+  if (Array.isArray(nestedData?.data)) {
+    return nestedData.data;
+  }
+
+  return [];
+}
+
+function buildDetailList(
+  pairs: Array<{ label: string; value: string | undefined }>,
+): Array<{ label: string; value: string }> {
+  return pairs
+    .map((pair) => ({
+      label: pair.label,
+      value: (pair.value ?? "").trim(),
+    }))
+    .filter((pair) => pair.value);
+}
+
+function summarizeRuleElement(element: Record<string, unknown>): string {
+  const ruleType = asString(element.rule_type).trim();
+  const value = asString(element.value).trim();
+  const matching = asRecord(element.matching);
+  const matchType = asString(matching?.match_type).trim();
+
+  const parts = [ruleType, matchType, value].filter(Boolean);
+  return parts.join(" | ");
+}
+
+function toPickerItems(payload: unknown, kind = "generic"): Array<{
+  id: string;
+  name: string;
+  type?: string;
+  description?: string;
+  details?: Array<{ label: string; value: string }>;
+}> {
+  return extractListItems(payload)
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => {
+      const type = asString(item.type || item.goal_type);
+      const description = asString(item.description).trim();
+      const details = buildDetailList(
+        kind === "goal"
+          ? [
+              { label: "ID", value: String(item.id ?? "") },
+              { label: "Type", value: type },
+              { label: "Key", value: asString(item.key) },
+              { label: "Status", value: asString(item.status) },
+            ]
+          : [
+              { label: "ID", value: String(item.id ?? "") },
+              { label: "Type", value: type },
+              { label: "Status", value: asString(item.status) },
+              { label: "Key", value: asString(item.key) },
+            ],
+      );
+
+      return {
+        id: String(item.id ?? ""),
+        name: asString(item.name) || String(item.id ?? ""),
+        type,
+        description: description || undefined,
+        details,
+      };
+    })
+    .filter((item) => item.id && item.name);
+}
+
+function getNestedRuleElements(location: Record<string, unknown>): Array<Record<string, unknown>> {
+  const rules = asRecord(location.rules);
+  const orBlocks = Array.isArray(rules?.OR) ? rules.OR : [];
+  const elements: Array<Record<string, unknown>> = [];
+
+  for (const orBlock of orBlocks) {
+    const andItems = Array.isArray(asRecord(orBlock)?.AND)
+      ? (asRecord(orBlock)?.AND as unknown[])
+      : [];
+
+    for (const andItem of andItems) {
+      const orWhenItems = Array.isArray(asRecord(andItem)?.OR_WHEN)
+        ? (asRecord(andItem)?.OR_WHEN as unknown[])
+        : [];
+
+      for (const ruleElement of orWhenItems) {
+        const record = asRecord(ruleElement);
+        if (record) {
+          elements.push(record);
+        }
+      }
+    }
+  }
+
+  return elements;
+}
+
+function deriveLocationVisualEditorUrl(location: Record<string, unknown>): string {
+  const elements = getNestedRuleElements(location);
+
+  for (const element of elements) {
+    const ruleType = asString(element.rule_type);
+    const value = asString(element.value).trim();
+
+    if (!value) {
+      continue;
+    }
+
+    if ((ruleType === "url" || ruleType === "url_with_query") && /^https?:\/\//i.test(value)) {
+      return value;
+    }
+
+    if ((ruleType === "url" || ruleType === "url_with_query") && /^[a-z0-9.-]+\.[a-z]{2,}/i.test(value)) {
+      return `https://${value}`;
+    }
+  }
+
+  return "";
+}
+
+function toLocationPickerItems(payload: unknown): Array<{
+  id: string;
+  name: string;
+  type?: string;
+  description?: string;
+  details?: Array<{ label: string; value: string }>;
+  visualEditorUrl?: string;
+}> {
+  return extractListItems(payload)
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => {
+      const firstRule = getNestedRuleElements(item)[0];
+      const visualEditorUrl = deriveLocationVisualEditorUrl(item);
+
+      return {
+        id: String(item.id ?? ""),
+        name: asString(item.name) || String(item.id ?? ""),
+        type: "Location",
+        description: asString(item.description).trim() || undefined,
+        details: buildDetailList([
+          { label: "ID", value: String(item.id ?? "") },
+          { label: "Status", value: asString(item.status) },
+          { label: "Trigger", value: asString(asRecord(item.trigger)?.type) },
+          { label: "Rule", value: firstRule ? summarizeRuleElement(firstRule) : "" },
+          { label: "Visual editor URL", value: visualEditorUrl },
+        ]),
+        visualEditorUrl,
+      };
+    })
+    .filter((item) => item.id && item.name);
+}
+
+function slugifyKey(value: string, maxLength = 32): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, maxLength);
+}
+
+function buildConvertSummaryLink(
+  accountId: string,
+  projectId: string,
+  experienceId: string,
+): string {
+  return `https://app.convert.com/accounts/${accountId}/projects/${projectId}/experiences/${experienceId}/summary`;
+}
+
+function buildConvertApiExperienceLink(
+  accountId: string,
+  projectId: string,
+  experienceId: string,
+): string {
+  return `https://api.convert.com/api/v2/accounts/${accountId}/projects/${projectId}/experiences/${experienceId}`;
+}
+
+function normalizeCreateExperimentPayload(value: unknown): {
+  errors: string[];
+  data?: NormalizedCreateExperiment;
+} {
+  const record = asRecord(value) ?? {};
+  const name = asString(record.name).trim();
+  const url = asString(record.url).trim();
+  const description = asString(record.description).trim();
+  const selectedLocations = Array.isArray(record.selectedLocations)
+    ? record.selectedLocations
+    : [];
+  const newLocations = Array.isArray(record.newLocations) ? record.newLocations : [];
+  const audiences = Array.isArray(record.audiences) ? record.audiences : [];
+  const goals = Array.isArray(record.goals) ? record.goals : [];
+  const newGoals = Array.isArray(record.newGoals) ? record.newGoals : [];
+  const errors: string[] = [];
+
+  if (!name) {
+    errors.push("Experiment name is required.");
+  }
+
+  if (!url) {
+    errors.push("Experiment URL is required.");
+  } else {
+    try {
+      const parsedUrl = new URL(url);
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        errors.push("Experiment URL must use http or https.");
+      }
+    } catch {
+      errors.push("Experiment URL must be a valid absolute URL.");
+    }
+  }
+
+  if (!selectedLocations.length && !newLocations.length) {
+    errors.push("Select or create at least one location.");
+  }
+
+  const normalizedSelectedLocations = selectedLocations
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({
+      id: asNumber(item.id),
+      name: asString(item.name).trim(),
+      visualEditorUrl: asString(item.visualEditorUrl).trim(),
+    }));
+
+  const normalizedNewLocations = newLocations
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({
+      name: asString(item.name).trim(),
+      source: (asString(item.source).trim() === "javascript"
+        ? "javascript"
+        : "url") as "url" | "javascript",
+      type: asString(item.type).trim(),
+      operator: asString(item.operator).trim(),
+      value: asString(item.value).trim(),
+    }));
+
+  normalizedSelectedLocations.forEach((location, index) => {
+    if (location.id === undefined) {
+      errors.push(`Selected location ${index + 1} is missing an ID.`);
+    }
+  });
+
+  normalizedNewLocations.forEach((location, index) => {
+    if (!location.name) {
+      errors.push(`New location ${index + 1} needs a name.`);
+    }
+    if (!location.type) {
+      errors.push(`New location ${index + 1} needs a type.`);
+    }
+    if (!location.operator) {
+      errors.push(`New location ${index + 1} needs a match option.`);
+    }
+    if (!location.value) {
+      errors.push(`New location ${index + 1} needs a value.`);
+    }
+  });
+
+  const audienceIds = audiences
+    .map((item) => asRecord(item))
+    .map((item) => asNumber(item?.id))
+    .filter((id): id is number => id !== undefined);
+  const goalIds = goals
+    .map((item) => asRecord(item))
+    .map((item) => asNumber(item?.id))
+    .filter((id): id is number => id !== undefined);
+  const normalizedNewGoals = newGoals
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({
+      name: asString(item.name).trim(),
+      description: asString(item.description).trim(),
+    }));
+
+  if (audiences.length !== audienceIds.length) {
+    errors.push("Selected audiences must have valid Convert audience IDs.");
+  }
+
+  if (goals.length !== goalIds.length) {
+    errors.push("Selected goals must have valid Convert goal IDs.");
+  }
+
+  normalizedNewGoals.forEach((goal, index) => {
+    if (!goal.name) {
+      errors.push(`New goal ${index + 1} needs a name.`);
+    }
+  });
+
+  if (errors.length) {
+    return { errors };
+  }
+
+  const payload: CreateExperimentPayload = {
+    name,
+    description: description || undefined,
+    objective: description || undefined,
+    type: "a/b",
+    status: "draft",
+    url,
+    audiences: audienceIds,
+    goals: goalIds,
+    locations: normalizedSelectedLocations
+      .map((location) => location.id)
+      .filter((id): id is number => id !== undefined),
+    primary_goal: goalIds[0],
+    variations: [
+      {
+        name: "Original",
+        is_baseline: true,
+        traffic_distribution: 50,
+      },
+      {
+        name: "Variation 1",
+        is_baseline: false,
+        traffic_distribution: 50,
+      },
+    ],
+    settings: {
+      matching_options: {
+        audiences: "any",
+        locations: "any",
+      },
+    },
+  };
+
+  return {
+    errors: [],
+    data: {
+      payload,
+      newLocations: normalizedNewLocations,
+      newGoals: normalizedNewGoals,
+    },
+  };
+}
+
+function toLocationRuleElement(location: {
+  source: "url" | "javascript";
+  type: string;
+  value: string;
+  operator: string;
+}) {
+  if (location.source === "javascript") {
+    return {
+      rule_type: "js_condition",
+      value: location.value,
+      matching: {
+        match_type: "equals",
+        negated: false,
+      },
+    };
+  }
+
+  return {
+    rule_type:
+      location.type === "path"
+        ? "url"
+        : location.type === "domain"
+          ? "url"
+          : "url",
+    value: location.value,
+    matching: {
+      match_type: location.operator,
+      negated: false,
+    },
+  };
+}
+
+function buildCreateLocationPayload(
+  experimentName: string,
+  location: {
+    name: string;
+    source: "url" | "javascript";
+    type: string;
+    value: string;
+    operator: string;
+  },
+  index: number,
+): CreateLocationPayload {
+  return {
+    name:
+      location.name || `${experimentName} - ${location.type} ${index + 1}`.slice(0, 100),
+    description: `Created by VS Code Create Experiment wizard for ${experimentName}`.slice(0, 500),
+    status: "active",
+    selected_default: false,
+    rules: {
+      OR: [
+        {
+          AND: [
+            {
+              OR_WHEN: [toLocationRuleElement(location)],
+            },
+          ],
+        },
+      ],
+    },
+    trigger: {
+      type: "upon_run",
+    },
+  };
+}
+
+function extractCreatedId(response: unknown, label: string): number {
+  const root = asRecord(response);
+  const data = asRecord(root?.data) ?? root;
+  const id = asNumber(data?.id ?? root?.id);
+
+  if (id === undefined) {
+    throw new Error(`Convert created ${label}, but the response did not include an ID.`);
+  }
+
+  return id;
+}
+
+async function createLocationIds(
+  token: string,
+  accountId: string,
+  projectId: string,
+  experimentName: string,
+  locations: Array<{
+    name: string;
+    source: "url" | "javascript";
+    type: string;
+    value: string;
+    operator: string;
+  }>,
+): Promise<number[]> {
+  const createdIds: number[] = [];
+
+  for (const [index, location] of locations.entries()) {
+    const response = await convertApi.createLocation(
+      token,
+      accountId,
+      projectId,
+      buildCreateLocationPayload(experimentName, location, index),
+    );
+
+    createdIds.push(extractCreatedId(response, "location"));
+  }
+
+  return createdIds;
+}
+
+function buildCreateGoalPayload(goal: {
+  name: string;
+  description?: string;
+}): CreateGoalPayload {
+  return {
+    name: goal.name,
+    description: goal.description || undefined,
+    key: slugifyKey(goal.name),
+    type: "code_trigger",
+    status: "active",
+    selected_default: false,
+  };
+}
+
+async function createGoalIds(
+  token: string,
+  accountId: string,
+  projectId: string,
+  goals: Array<{ name: string; description?: string }>,
+): Promise<number[]> {
+  const createdIds: number[] = [];
+
+  for (const goal of goals) {
+    const response = await convertApi.createGoal(
+      token,
+      accountId,
+      projectId,
+      buildCreateGoalPayload(goal),
+    );
+
+    createdIds.push(extractCreatedId(response, "goal"));
+  }
+
+  return createdIds;
+}
+
+function extractCreatedExperiment(response: unknown, fallbackName: string): CreatedExperiment {
+  const root = asRecord(response);
+  const data = asRecord(root?.data) ?? root;
+  const id = String(data?.id ?? root?.id ?? "");
+  const name = asString(data?.name) || asString(root?.name) || fallbackName;
+  const url = asString(data?.url) || asString(root?.url);
+
+  if (!id) {
+    throw new Error("Convert created the experiment, but the response did not include an experiment ID.");
+  }
+
+  return { id, name, url: url || undefined };
+}
+
+function buildVariationPreviewLink(
+  baseUrl: string,
+  experienceId: string,
+  variationId: string,
+): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set("convert_action", "convert_vpreview");
+  url.searchParams.set("convert_e", experienceId);
+  url.searchParams.set("convert_v", variationId);
+  return url.toString();
+}
+
+export async function handleCreateExperimentMessage(
+  message: Record<string, unknown>,
+  webview: WebviewLike,
+  context: vscode.ExtensionContext | undefined,
+  onCreated: (experiment: CreatedExperiment) => void | Promise<void>,
+) {
+  try {
+    switch (message.command) {
+      case "ready": {
+        break;
+      }
+
+      case "requestAudiences": {
+        const token = await resolveToken(message, context);
+        const audiences = await convertApi.getAudiences(
+          token,
+          asString(message.accountId),
+          asString(message.projectId),
+          asString(message.search),
+        );
+
+        await webview.postMessage({
+          command: "audiences",
+          data: toPickerItems(audiences, "audience"),
+        });
+        break;
+      }
+
+      case "requestLocations": {
+        const token = await resolveToken(message, context);
+        const locations = await convertApi.getLocations(
+          token,
+          asString(message.accountId),
+          asString(message.projectId),
+          asString(message.search),
+        );
+
+        await webview.postMessage({
+          command: "locations",
+          data: toLocationPickerItems(locations),
+        });
+        break;
+      }
+
+      case "requestGoals": {
+        const token = await resolveToken(message, context);
+        const goals = await convertApi.getGoals(
+          token,
+          asString(message.accountId),
+          asString(message.projectId),
+          asString(message.search),
+        );
+
+        await webview.postMessage({
+          command: "goals",
+          data: toPickerItems(goals, "goal"),
+        });
+        break;
+      }
+
+      case "createExperiment": {
+        const accountId = asString(message.accountId);
+        const projectId = asString(message.projectId);
+        validateProjectSelection(accountId, projectId);
+
+        const normalized = normalizeCreateExperimentPayload(message.state);
+        if (normalized.errors.length || !normalized.data) {
+          await webview.postMessage({
+            command: "createExperimentFailed",
+            message: "Please fix the highlighted issues.",
+            errors: normalized.errors,
+          });
+          break;
+        }
+
+        const token = await resolveToken(message, context);
+        const createdLocationIds = await createLocationIds(
+          token,
+          accountId,
+          projectId,
+          normalized.data.payload.name,
+          normalized.data.newLocations,
+        );
+        const createdGoalIds = await createGoalIds(
+          token,
+          accountId,
+          projectId,
+          normalized.data.newGoals,
+        );
+        normalized.data.payload.locations = [
+          ...(normalized.data.payload.locations ?? []),
+          ...createdLocationIds,
+        ];
+        normalized.data.payload.goals = [
+          ...(normalized.data.payload.goals ?? []),
+          ...createdGoalIds,
+        ];
+        if (!normalized.data.payload.primary_goal) {
+          normalized.data.payload.primary_goal =
+            normalized.data.payload.goals?.[0];
+        }
+
+        const response = await convertApi.createExperiment(
+          token,
+          accountId,
+          projectId,
+          normalized.data.payload,
+        );
+        const created = extractCreatedExperiment(
+          response,
+          normalized.data.payload.name,
+        );
+        created.summaryLink = buildConvertSummaryLink(
+          accountId,
+          projectId,
+          created.id,
+        );
+        created.apiLink = buildConvertApiExperienceLink(
+          accountId,
+          projectId,
+          created.id,
+        );
+        created.url = created.url || normalized.data.payload.url;
+
+        await webview.postMessage({
+          command: "createExperimentSucceeded",
+          experiment: created,
+        });
+        await onCreated(created);
+        break;
+      }
+
+      case "openExternal": {
+        const href = asString(message.href).trim();
+        if (!href) {
+          throw new Error("Missing link to open.");
+        }
+
+        await vscode.env.openExternal(vscode.Uri.parse(href));
+        break;
+      }
+
+      default:
+        console.warn("Unknown create experiment command:", message.command);
+    }
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+
+    await webview.postMessage({
+      command: "createExperimentFailed",
+      message: errorMessage,
+      errors: [errorMessage],
+    });
+  }
+}
+
 export async function handleMessage(
   message: Record<string, unknown>,
   webview: WebviewLike,
@@ -1108,6 +1819,20 @@ export async function handleMessage(
 ) {
   try {
     switch (message.command) {
+      case "openCreateExperiment": {
+        const accountId = asString(message.accountId);
+        const projectId = asString(message.projectId);
+        validateProjectSelection(accountId, projectId);
+
+        await vscode.commands.executeCommand("convert.openCreateExperiment", {
+          accountId,
+          projectId,
+          projectName: asString(message.projectName),
+          apiKey: typeof message.apiKey === "string" ? message.apiKey : undefined,
+        });
+        break;
+      }
+
       case "saveConfig": {
         if (!context) {
           break;
@@ -1506,6 +2231,52 @@ export async function handleMessage(
           command: "variations",
           sessionId: asString(message.sessionId),
           data: variationsData,
+        });
+        break;
+      }
+
+      case "copyPreviewLink": {
+        const token = await resolveToken(message, context);
+        const accountId = asString(message.accountId);
+        const projectId = asString(message.projectId);
+        const experienceId = asString(message.experienceId);
+        const variationId = asString(message.variationId);
+
+        validateProjectSelection(
+          accountId,
+          projectId,
+          experienceId,
+          variationId,
+        );
+
+        if (variationId === "global") {
+          throw new Error("Preview link is only available for experiment variations.");
+        }
+
+        const details = await convertApi.getExperienceDetails(
+          token,
+          accountId,
+          projectId,
+          experienceId,
+        );
+        const detailRecord = asRecord(asRecord(details)?.data) ?? asRecord(details) ?? {};
+        const baseUrl = asString(detailRecord.url).trim();
+
+        if (!baseUrl) {
+          throw new Error(
+            "This experiment does not have a usable experience URL for preview generation.",
+          );
+        }
+
+        const previewLink = buildVariationPreviewLink(
+          baseUrl,
+          experienceId,
+          variationId,
+        );
+        await vscode.env.clipboard.writeText(previewLink);
+        await webview.postMessage({
+          command: "success",
+          message: "Preview link copied to clipboard.",
         });
         break;
       }

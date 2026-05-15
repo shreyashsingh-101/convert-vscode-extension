@@ -129,6 +129,38 @@ button:active {
   background: var(--vscode-toolbar-hoverBackground);
 }
 
+.accent-action {
+  background: color-mix(in srgb, var(--vscode-button-background) 18%, transparent);
+  color: var(--vscode-button-background);
+  border-color: color-mix(in srgb, var(--vscode-button-background) 45%, var(--vscode-input-border) 55%);
+  font-weight: 600;
+}
+
+.accent-action:hover {
+  background: color-mix(in srgb, var(--vscode-button-background) 24%, transparent);
+}
+
+.title-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.field-header label {
+  margin-bottom: 0;
+}
+
+.field-header .title-action {
+  padding: 2px 7px;
+}
+
 .secondary-button {
   background: transparent;
   color: var(--vscode-foreground);

@@ -50,6 +50,63 @@ async function requestMultipart(url: string, apiKey: string, body: FormData) {
   }
 }
 
+export interface CreateExperimentPayload {
+  name: string;
+  description?: string;
+  objective?: string;
+  type: string;
+  status: string;
+  url: string;
+  audiences?: number[];
+  goals?: number[];
+  locations?: number[];
+  primary_goal?: number;
+  variations?: Array<{
+    name: string;
+    is_baseline?: boolean;
+    traffic_distribution?: number;
+  }>;
+  settings?: {
+    matching_options?: {
+      audiences?: "any" | "all";
+      locations?: "any" | "all";
+    };
+  };
+}
+
+export interface CreateLocationPayload {
+  name: string;
+  description?: string;
+  status?: "active" | "archived";
+  selected_default?: boolean;
+  rules: {
+    OR: Array<{
+      AND: Array<{
+        OR_WHEN: Array<{
+          rule_type: string;
+          value: string;
+          matching: {
+            match_type: string;
+            negated: boolean;
+          };
+        }>;
+      }>;
+    }>;
+  };
+  trigger?: {
+    type: "upon_run" | "manual" | "dom_element" | "callback";
+  };
+}
+
+export interface CreateGoalPayload {
+  name: string;
+  type: "code_trigger";
+  key?: string;
+  description?: string;
+  status?: "active" | "archived";
+  selected_default?: boolean;
+}
+
 export const convertApi = {
   getProject: (apiKey: string, accountId: string, projectId: string) =>
     request(
@@ -74,6 +131,99 @@ export const convertApi = {
       apiKey,
       "POST",
       { search: search || "" },
+    ),
+
+  getAudiences: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    search?: string,
+  ) =>
+    request(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}/audiences`,
+      apiKey,
+      "POST",
+      {
+        search: search || "",
+        status: ["active"],
+        results_per_page: 50,
+        include: ["rules"],
+      },
+    ),
+
+  getGoals: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    search?: string,
+  ) =>
+    request(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}/goals`,
+      apiKey,
+      "POST",
+      {
+        search: search || "",
+        status: ["active"],
+        results_per_page: 50,
+        include: ["triggering_rule"],
+      },
+    ),
+
+  createGoal: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    payload: CreateGoalPayload,
+  ) =>
+    request(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}/goals/add`,
+      apiKey,
+      "POST",
+      payload,
+    ),
+
+  getLocations: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    search?: string,
+  ) =>
+    request(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}/locations`,
+      apiKey,
+      "POST",
+      {
+        search: search || "",
+        status: ["active"],
+        results_per_page: 50,
+        include: ["rules", "trigger"],
+      },
+    ),
+
+  createLocation: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    payload: CreateLocationPayload,
+  ) =>
+    request(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}/locations/add`,
+      apiKey,
+      "POST",
+      payload,
+    ),
+
+  createExperiment: (
+    apiKey: string,
+    accountId: string,
+    projectId: string,
+    payload: CreateExperimentPayload,
+  ) =>
+    request(
+      `${BASE_URL}/accounts/${accountId}/projects/${projectId}/experiences/add?expand[]=variations&expand[]=audiences&expand[]=goals&expand[]=locations`,
+      apiKey,
+      "POST",
+      payload,
     ),
 
   getVariations: (

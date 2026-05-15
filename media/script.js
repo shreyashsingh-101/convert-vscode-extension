@@ -312,8 +312,8 @@ function renderTabs() {
 
 function renderSession() {
   renderTabs();
-  updateAuthUI();
   renderWorkflowMode();
+  updateAuthUI();
 
   if (isServerActive()) {
     renderServerView();
@@ -342,7 +342,51 @@ function renderSession() {
   }
 
   renderActiveSummary();
+  updateCreateExperimentAction();
+  updateCopyPreviewLinkAction();
   saveWebviewState();
+}
+
+function updateCreateExperimentAction() {
+  const button = document.getElementById("createExperimentBtn");
+  if (!button) {
+    return;
+  }
+
+  const session = getActiveSession();
+  const enabled =
+    !isImageUploadActive() &&
+    !isServerActive() &&
+    Boolean(session.accountId && session.projectId);
+
+  button.disabled = !enabled;
+  button.title = enabled
+    ? "Create a new experiment in the selected project"
+    : "Select a project first";
+}
+
+function updateCopyPreviewLinkAction() {
+  const button = document.getElementById("copyPreviewLinkBtn");
+  if (!button) {
+    return;
+  }
+
+  const session = getActiveSession();
+  const enabled =
+    !isImageUploadActive() &&
+    !isServerActive() &&
+    Boolean(
+      session.accountId &&
+      session.projectId &&
+      session.experienceId &&
+      session.variationId &&
+      session.variationId !== GLOBAL_VARIATION_ID,
+    );
+
+  button.disabled = !enabled;
+  button.title = enabled
+    ? "Copy a Convert preview link for the selected variation"
+    : "Select a non-global variation first";
 }
 
 function renderWorkflowMode() {
@@ -592,11 +636,22 @@ function updateEditorActions() {
 }
 
 function updateAuthUI() {
+  if (isServerActive()) {
+    document.getElementById("apiKeySection").style.display = "none";
+    document.getElementById("oauthSection").style.display = "none";
+    document.getElementById("orSeparator").style.display = "none";
+    document.getElementById("accountIdSection").style.display = "none";
+    document.getElementById("accountSelectSection").style.display = "none";
+    document.getElementById("authActionSection").style.display = "none";
+    return;
+  }
+
   const isOauth = authMode === "oauth";
 
   document.getElementById("apiKeySection").style.display = isOauth ? "none" : "block";
   document.getElementById("oauthSection").style.display = isOauth ? "block" : "none";
   document.getElementById("orSeparator").style.display = isOauth ? "none" : "flex";
+  document.getElementById("authActionSection").style.display = "block";
   document.getElementById("accountIdSection").style.display = isOauth ? "none" : "block";
   document.getElementById("accountSelectSection").style.display = isOauth ? "block" : "none";
   document.getElementById("authBtn").textContent = isOauth
@@ -775,6 +830,51 @@ function requestVariations(experienceId) {
   });
 }
 
+function openCreateExperiment() {
+  const auth = getAuthPayload();
+  const session = getActiveSession();
+
+  if (auth === null) {
+    return;
+  }
+
+  if (!session.projectId) {
+    showToast("Select project first", "error");
+    return;
+  }
+
+  vscode.postMessage({
+    command: "openCreateExperiment",
+    ...auth,
+    accountId: session.accountId,
+    projectId: session.projectId,
+    projectName: session.projectName,
+  });
+}
+
+function copyPreviewLink() {
+  const auth = getAuthPayload();
+  const session = getActiveSession();
+
+  if (auth === null) {
+    return;
+  }
+
+  if (!session.experienceId || !session.variationId || session.variationId === GLOBAL_VARIATION_ID) {
+    showToast("Select a variation first", "error");
+    return;
+  }
+
+  vscode.postMessage({
+    command: "copyPreviewLink",
+    ...auth,
+    accountId: session.accountId,
+    projectId: session.projectId,
+    experienceId: session.experienceId,
+    variationId: session.variationId,
+  });
+}
+
 function selectProject(id) {
   const session = getActiveProjectContext();
   const selected = session.projectItems.find((item) => String(item.id) === String(id));
@@ -798,6 +898,7 @@ function selectProject(id) {
   saveConfig();
   renderTabs();
   renderActiveSummary();
+  updateCreateExperimentAction();
   requestExperiences(id);
 }
 
@@ -819,6 +920,7 @@ function selectExperience(id) {
   session.experienceName = selected?.name || id;
   saveConfig();
   renderActiveSummary();
+  updateCreateExperimentAction();
   requestVariations(id);
 }
 
@@ -836,6 +938,7 @@ function selectVariation(id) {
   restoreUploadedFiles(session);
   saveConfig();
   renderActiveSummary();
+  updateCopyPreviewLinkAction();
 }
 
 function validateSelection() {
@@ -1989,7 +2092,7 @@ window.addEventListener("message", ({ data }) => {
         renderDropdown("projects", session.projectItems, selectProject, {
           selectedId: session.projectId,
           remoteSearch: true,
-          collapseWhenSelected: isHydratingRestore,
+          collapseWhenSelected: Boolean(session.projectId),
         });
         if (isHydratingRestore && session.projectId) {
           if (!isImageUploadActive()) {
@@ -2006,11 +2109,23 @@ window.addEventListener("message", ({ data }) => {
     case "experiences": {
       const session = sessions.find((item) => item.sessionId === data.sessionId) || getActiveSession();
       session.experienceItems = extractItems(data.data);
+      if (
+        session.experienceId &&
+        session.experienceName &&
+        !session.experienceItems.some(
+          (item) => String(item.id) === String(session.experienceId),
+        )
+      ) {
+        session.experienceItems.unshift({
+          id: session.experienceId,
+          name: session.experienceName,
+        });
+      }
       if (session.sessionId === activeSessionId) {
         renderDropdown("experiences", session.experienceItems, selectExperience, {
           selectedId: session.experienceId,
           remoteSearch: true,
-          collapseWhenSelected: isHydratingRestore,
+          collapseWhenSelected: Boolean(session.experienceId),
         });
         if (isHydratingRestore && session.experienceId) {
           requestVariations(session.experienceId);
@@ -2028,11 +2143,62 @@ window.addEventListener("message", ({ data }) => {
       if (session.sessionId === activeSessionId) {
         renderDropdown("variations", session.variationItems, selectVariation, {
           selectedId: session.variationId,
-          collapseWhenSelected: isHydratingRestore,
+          collapseWhenSelected: Boolean(session.variationId),
         });
         isHydratingRestore = false;
       }
       saveWebviewState();
+      break;
+    }
+
+    case "experimentCreated": {
+      const session = getActiveSession();
+      const experiment = data.experiment || {};
+
+      if (String(data.projectId) !== String(session.projectId)) {
+        break;
+      }
+
+      if (experiment.id) {
+        const existingIndex = session.experienceItems.findIndex(
+          (item) => String(item.id) === String(experiment.id),
+        );
+        const item = {
+          id: String(experiment.id),
+          name: experiment.name || String(experiment.id),
+        };
+
+        if (existingIndex >= 0) {
+          session.experienceItems[existingIndex] = item;
+        } else {
+          session.experienceItems.unshift(item);
+        }
+
+        session.experienceId = item.id;
+        session.experienceName = item.name;
+        session.variationId = null;
+        session.variationName = "";
+        session.variationItems = [];
+        clearSessionFiles(session);
+        clearSessionEditor(session);
+        renderDropdown("experiences", session.experienceItems, selectExperience, {
+          selectedId: session.experienceId,
+          remoteSearch: true,
+          collapseWhenSelected: true,
+        });
+        renderDropdown("variations", [], selectVariation, {
+          selectedId: null,
+          collapseWhenSelected: true,
+          startCollapsed: true,
+          placeholder: "Loading variations...",
+        });
+        requestExperiences(session.projectId);
+        requestVariations(session.experienceId);
+        saveConfig();
+        renderActiveSummary();
+        updateCopyPreviewLinkAction();
+        showToast("Experiment created and selected", "success");
+      }
       break;
     }
 
@@ -2603,6 +2769,8 @@ window.switchServerTab = switchServerTab;
 window.handleAuthBtn = handleAuthBtn;
 window.openClientIdModal = openClientIdModal;
 window.loadProjects = loadProjects;
+window.openCreateExperiment = openCreateExperiment;
+window.copyPreviewLink = copyPreviewLink;
 window.clearAll = clearAll;
 window.closeClearModal = closeClearModal;
 window.clearProjectDetails = clearProjectDetails;

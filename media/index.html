@@ -253,12 +253,34 @@
     </div>
 
     <div id="experienceSection" class="section">
-      <label>Experiment</label>
+      <div class="field-header">
+        <label>Experiment</label>
+        <button
+          id="createExperimentBtn"
+          type="button"
+          class="title-action accent-action"
+          onclick="openCreateExperiment()"
+          disabled
+        >
+          Create
+        </button>
+      </div>
       <div id="experiences"></div>
     </div>
 
     <div id="variationSection" class="section">
-      <label>Variation</label>
+      <div class="field-header">
+        <label>Variation</label>
+        <button
+          id="copyPreviewLinkBtn"
+          type="button"
+          class="title-action"
+          onclick="copyPreviewLink()"
+          disabled
+        >
+          Copy Preview Link
+        </button>
+      </div>
       <div id="variations"></div>
     </div>
 

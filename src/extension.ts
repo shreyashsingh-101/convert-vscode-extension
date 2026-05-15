@@ -11,6 +11,7 @@ import {
   getStoredAccounts,
   getToken,
 } from "./auth/convertAuth";
+import { CreateExperimentPanel } from "./panels/createExperiment/panel";
 
 interface ConvertConfig {
   apiKey?: string | null;
@@ -189,6 +190,28 @@ class SidebarProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  openCreateExperiment(options: {
+    accountId: string;
+    projectId: string;
+    projectName?: string;
+    apiKey?: string;
+  }) {
+    if (!this.view) {
+      vscode.window.showErrorMessage(
+        "Open the Convert sidebar before creating an experiment.",
+      );
+      return;
+    }
+
+    CreateExperimentPanel.open(this.context, options, async (experiment) => {
+      await this.view?.webview.postMessage({
+        command: "experimentCreated",
+        experiment,
+        projectId: options.projectId,
+      });
+    });
+  }
+
   private getHtml(webview: vscode.Webview) {
     const htmlPath = vscode.Uri.joinPath(
       this.extensionUri,
@@ -256,6 +279,20 @@ export function activate(context: vscode.ExtensionContext) {
       await clearToken(context);
       vscode.window.showInformationMessage("Disconnected from Convert.");
     }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "convert.openCreateExperiment",
+      (options: {
+        accountId: string;
+        projectId: string;
+        projectName?: string;
+        apiKey?: string;
+      }) => {
+        sidebar.openCreateExperiment(options);
+      },
+    ),
   );
 }
 
