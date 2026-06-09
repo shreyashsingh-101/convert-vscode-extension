@@ -290,7 +290,7 @@
       </button>
     </div>
 
-    <div id="mcpSection" class="section">
+    <div id="mcpSection" class="section server-view hidden">
       <div class="server-header">
         <h3>AI / MCP</h3>
         <div class="server-note">Embedded local MCP server for AI clients</div>
@@ -300,10 +300,20 @@
         <div id="mcpStatusLabel">Status: starting…</div>
         <div id="mcpEndpoint">Endpoint: unavailable</div>
         <div id="mcpPort">Port: unavailable</div>
+        <div id="mcpHealthLabel">Health: checking</div>
+        <div id="mcpChecks">Checks: waiting for first status check</div>
+        <div id="mcpLastChecked">Last checked: not yet</div>
       </div>
 
       <div class="button-row">
         <button id="getMcpConfigBtn" onclick="getMcpConfig()">Get MCP Config</button>
+        <button
+          id="checkMcpHealthBtn"
+          class="secondary-button"
+          onclick="checkMcpHealth()"
+        >
+          Check Status
+        </button>
         <button
           id="restartMcpServerBtn"
           class="secondary-button"
@@ -322,7 +332,7 @@
 
       <div class="section">
         <label for="mcpConfigOutput">MCP Config</label>
-        <textarea id="mcpConfigOutput" rows="12" readonly></textarea>
+        <textarea id="mcpConfigOutput" rows="10" readonly></textarea>
       </div>
     </div>
 
@@ -367,7 +377,7 @@
 
     <footer>
       <p>
-        By <a href="https://github.com/shreyashsingh-101" target="_blank">SS</a>. <a href="https://github.com/shreyashsingh-101/convert-vscode-extension" target="_blank">v0.0.7</a>
+        By <a href="https://github.com/shreyashsingh-101" target="_blank">SS</a>. <a href="https://github.com/shreyashsingh-101/convert-vscode-extension" target="_blank">v0.0.8</a>
       </p>
     </footer>
 

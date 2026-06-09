@@ -3,10 +3,12 @@ const vscode = acquireVsCodeApi();
 const GLOBAL_VARIATION_ID = "global";
 const IMAGE_UPLOAD_SESSION_ID = "__imageUpload";
 const SERVER_SESSION_ID = "__server";
+const MCP_SESSION_ID = "__mcp";
 
 let authMode = "apikey";
 let accounts = [];
 let clientId = "";
+let oauthLoginPending = false;
 let isLoading = false;
 let editorLoading = false;
 let isHydratingRestore = false;
@@ -26,6 +28,7 @@ let imageUploadState = {
 let imageUploadQueue = [];
 let serverConfigs = [];
 let serverState = createDefaultServerConfig();
+let activeServerDomainIndex = -1;
 let selectedServerConfigId = "";
 let isServerConfigDropdownOpen = false;
 let serverConfigSearchTerm = "";
@@ -36,6 +39,12 @@ let mcpState = {
   port: null,
   endpoint: "",
   lastError: "",
+  healthStatus: "checking",
+  transportOk: false,
+  toolsOk: false,
+  sessionToolOk: false,
+  lastCheckError: "",
+  lastCheckedAt: 0,
   configText: "",
 };
 
@@ -56,8 +65,8 @@ function createEmptyServerConfig(seed = {}) {
     rootPath: seed.rootPath || seed.outputPath || "",
     domains: Array.isArray(seed.domains) ? seed.domains : [],
     clubJsCss:
-      typeof seed.clubJsCss === "boolean" ? seed.clubJsCss : true,
-    minimize: typeof seed.minimize === "boolean" ? seed.minimize : false,
+      typeof seed.clubJsCss === "boolean" ? seed.clubJsCss : false,
+    minimize: typeof seed.minimize === "boolean" ? seed.minimize : true,
     variations: (seed.variations?.length ? seed.variations : [{}]).map(
       createServerVariation,
     ),
@@ -66,8 +75,8 @@ function createEmptyServerConfig(seed = {}) {
 
 function createDefaultServerConfig() {
   return createEmptyServerConfig({
-    clubJsCss: true,
-    minimize: false,
+    clubJsCss: false,
+    minimize: true,
   });
 }
 
@@ -144,6 +153,7 @@ function saveWebviewState() {
     imageUploadState,
     serverState,
     mcpState,
+    oauthLoginPending: authMode !== "oauth" ? oauthLoginPending : false,
     apiKey: get("apiKey"),
   });
 }
@@ -158,8 +168,11 @@ function saveConfig() {
       apiKey: authMode === "apikey" ? get("apiKey") : null,
       accountId: session.accountId,
       projectId: session.projectId,
+      projectName: session.projectName || "",
       experienceId: isImageUploadActive() ? null : session.experienceId,
+      experienceName: isImageUploadActive() ? "" : session.experienceName || "",
       variationId: isImageUploadActive() ? null : session.variationId,
+      variationName: isImageUploadActive() ? "" : session.variationName || "",
       authMode,
     },
   });
@@ -172,6 +185,7 @@ function initSessions() {
     authMode = saved.authMode || "apikey";
     accounts = saved.accounts || [];
     clientId = saved.clientId || "";
+    oauthLoginPending = false;
     sessions = saved.sessions;
     activeSessionId = saved.activeSessionId || sessions[0].sessionId;
     renumberSessions();
@@ -216,6 +230,10 @@ function isServerActive() {
   return activeSessionId === SERVER_SESSION_ID;
 }
 
+function isMcpActive() {
+  return activeSessionId === MCP_SESSION_ID;
+}
+
 function getActiveProjectContext() {
   return isImageUploadActive() ? imageUploadState : getActiveSession();
 }
@@ -250,6 +268,15 @@ function switchServerTab() {
   activeSessionId = SERVER_SESSION_ID;
   renderSession();
   saveWebviewState();
+}
+
+function switchMcpTab() {
+  activeSessionId = MCP_SESSION_ID;
+  renderSession();
+  saveWebviewState();
+  if (!mcpState.lastCheckedAt || Date.now() - mcpState.lastCheckedAt > 30000) {
+    checkMcpHealth();
+  }
 }
 
 function removeSession(sessionId, event) {
@@ -318,6 +345,15 @@ function renderTabs() {
   serverTab.title = "Configure and run local server";
   serverTab.onclick = switchServerTab;
   container.appendChild(serverTab);
+
+  const mcpTab = document.createElement("button");
+  mcpTab.className = isMcpActive()
+    ? "session-tab image-tab active"
+    : "session-tab image-tab";
+  mcpTab.textContent = "AI / MCP";
+  mcpTab.title = "MCP status and config";
+  mcpTab.onclick = switchMcpTab;
+  container.appendChild(mcpTab);
 }
 
 function renderSession() {
@@ -327,6 +363,8 @@ function renderSession() {
 
   if (isServerActive()) {
     renderServerView();
+  } else if (isMcpActive()) {
+    renderMcpSection();
   } else {
     const context = getActiveProjectContext();
     set("accountId", context.accountId);
@@ -337,7 +375,7 @@ function renderSession() {
     });
   }
 
-  if (!isImageUploadActive() && !isServerActive()) {
+  if (!isImageUploadActive() && !isServerActive() && !isMcpActive()) {
     const session = getActiveSession();
     renderDropdown("experiences", session.experienceItems, selectExperience, {
       selectedId: session.experienceId,
@@ -361,10 +399,32 @@ function renderSession() {
 function renderMcpSection() {
   const status = mcpState.running ? "Running" : "Stopped";
   const errorSuffix = mcpState.lastError ? ` (${mcpState.lastError})` : "";
+  const health = mcpState.healthStatus || "checking";
+  const healthNote = mcpState.lastCheckError ? ` (${mcpState.lastCheckError})` : "";
+  const checkLabel = (value) => {
+    if (value) {
+      return "ok";
+    }
+    if (health === "degraded" || health === "offline") {
+      return "failed";
+    }
+    return "pending";
+  };
+  const checks = [
+    `Transport: ${checkLabel(mcpState.transportOk)}`,
+    `tools/list: ${checkLabel(mcpState.toolsOk)}`,
+    `get_active_session: ${checkLabel(mcpState.sessionToolOk)}`,
+  ].join(" | ");
+  const lastChecked = mcpState.lastCheckedAt
+    ? new Date(mcpState.lastCheckedAt).toLocaleString()
+    : "not yet";
 
   document.getElementById("mcpStatusLabel").textContent = `Status: ${status}${errorSuffix}`;
   document.getElementById("mcpEndpoint").textContent = `Endpoint: ${mcpState.endpoint || "Unavailable"}`;
   document.getElementById("mcpPort").textContent = `Port: ${mcpState.port || "Unavailable"}`;
+  document.getElementById("mcpHealthLabel").textContent = `Health: ${health}${healthNote}`;
+  document.getElementById("mcpChecks").textContent = `Checks: ${checks}`;
+  document.getElementById("mcpLastChecked").textContent = `Last checked: ${lastChecked}`;
   document.getElementById("mcpConfigOutput").value = mcpState.configText || "";
 }
 
@@ -378,6 +438,7 @@ function updateCreateExperimentAction() {
   const enabled =
     !isImageUploadActive() &&
     !isServerActive() &&
+    !isMcpActive() &&
     Boolean(session.accountId && session.projectId);
 
   button.disabled = !enabled;
@@ -396,6 +457,7 @@ function updateCopyPreviewLinkAction() {
   const enabled =
     !isImageUploadActive() &&
     !isServerActive() &&
+    !isMcpActive() &&
     Boolean(
       session.accountId &&
       session.projectId &&
@@ -413,6 +475,7 @@ function updateCopyPreviewLinkAction() {
 function renderWorkflowMode() {
   const imageMode = isImageUploadActive();
   const serverMode = isServerActive();
+  const mcpMode = isMcpActive();
   const sharedWorkflowIds = [
     "experienceSection",
     "variationSection",
@@ -437,7 +500,7 @@ function renderWorkflowMode() {
       return;
     }
 
-    element.style.display = imageMode || serverMode ? "none" : "block";
+    element.style.display = imageMode || serverMode || mcpMode ? "none" : "block";
   });
 
   serverOnlyHiddenIds.forEach((id) => {
@@ -446,15 +509,16 @@ function renderWorkflowMode() {
       return;
     }
 
-    element.style.display = serverMode ? "none" : "block";
+    element.style.display = serverMode || mcpMode ? "none" : "block";
   });
 
   document.querySelectorAll(".workflow-only").forEach((element) => {
-    element.style.display = imageMode || serverMode ? "none" : "block";
+    element.style.display = imageMode || serverMode || mcpMode ? "none" : "block";
   });
 
   document.getElementById("imageUploadView").classList.toggle("hidden", !imageMode);
   document.getElementById("serverView").classList.toggle("hidden", !serverMode);
+  document.getElementById("mcpSection").classList.toggle("hidden", !mcpMode);
   renderImageUploadView();
 }
 
@@ -568,6 +632,15 @@ function renderActiveSummary() {
     return;
   }
 
+  if (isMcpActive()) {
+    document.getElementById("activeSessionName").textContent = "";
+    document.getElementById("editorContext").textContent =
+      mcpState.running ? "Embedded MCP server is running" : "Embedded MCP server is stopped";
+    document.getElementById("editorFiles").textContent =
+      mcpState.endpoint || "Local endpoint unavailable";
+    return;
+  }
+
   const session = getActiveSession();
   const project = session.projectName || session.projectId || "No project";
   const variation =
@@ -657,7 +730,7 @@ function updateEditorActions() {
 }
 
 function updateAuthUI() {
-  if (isServerActive()) {
+  if (isServerActive() || isMcpActive()) {
     document.getElementById("apiKeySection").style.display = "none";
     document.getElementById("oauthSection").style.display = "none";
     document.getElementById("orSeparator").style.display = "none";
@@ -668,6 +741,7 @@ function updateAuthUI() {
   }
 
   const isOauth = authMode === "oauth";
+  const isPendingOauthLogin = !isOauth && oauthLoginPending;
 
   document.getElementById("apiKeySection").style.display = isOauth ? "none" : "block";
   document.getElementById("oauthSection").style.display = isOauth ? "block" : "none";
@@ -677,12 +751,21 @@ function updateAuthUI() {
   document.getElementById("accountSelectSection").style.display = isOauth ? "block" : "none";
   document.getElementById("authBtn").textContent = isOauth
     ? "Logout from Convert"
-    : "Login with Convert";
+    : isPendingOauthLogin
+      ? "Cancel login"
+      : "Login with Convert";
 
   renderAccounts();
 }
 
 function handleAuthBtn() {
+  if (authMode !== "oauth" && oauthLoginPending) {
+    vscode.postMessage({
+      command: "oauthCancelLogin",
+    });
+    return;
+  }
+
   if (authMode !== "oauth" && !clientId) {
     showToast("Add client ID first", "error");
     return;
@@ -719,6 +802,7 @@ function resetFormState() {
   authMode = "apikey";
   accounts = [];
   clientId = "";
+  oauthLoginPending = false;
   uploadFileMemory = {};
   imageUploadState = {
     accountId: "",
@@ -891,6 +975,12 @@ function getMcpConfig() {
 function restartMcpServer() {
   vscode.postMessage({
     command: "restartMcpServer",
+  });
+}
+
+function checkMcpHealth() {
+  vscode.postMessage({
+    command: "checkMcpHealth",
   });
 }
 
@@ -1441,6 +1531,7 @@ function syncServerRadioButtons() {
 
 function renderServerForm(config = serverState) {
   serverState = createEmptyServerConfig(config);
+  activeServerDomainIndex = -1;
   selectedServerConfigId = serverState.id || "";
   setServerInput("serverConfigName", serverState.name);
   setServerInput("serverPath", serverState.serverPath);
@@ -1480,6 +1571,7 @@ function renderActiveServerConfig() {
 function startNewServerConfig() {
   const preservedServerPath = serverState.serverPath || getServerInput("serverPath");
   serverState = createDefaultServerConfig();
+  activeServerDomainIndex = -1;
   serverState.serverPath = preservedServerPath || "";
   selectedServerConfigId = "";
   resetLoadedServerConfigTracking();
@@ -1769,24 +1861,80 @@ function renderServerDomains() {
   container.innerHTML = domains
     .map(
       (domain, index) => `
-        <div class="domain-row">
-          <input
-            value="${escapeHtml(domain)}"
-            placeholder="example.com"
-            oninput="updateServerDomain(${index}, this.value)"
-          />
-          <button
-            type="button"
-            class="domain-remove"
-            onclick="removeServerDomain(${index})"
-            title="Remove domain"
-          >
-            x
-          </button>
+        <div class="domain-row-stack">
+          <div class="domain-row">
+            <input
+              value="${escapeHtml(domain)}"
+              placeholder="example.com"
+              oninput="updateServerDomain(${index}, this.value)"
+              onfocus="setActiveServerDomainIndex(${index})"
+              onclick="setActiveServerDomainIndex(${index})"
+              onblur="hideServerDomainSuggestionsOnBlur(${index})"
+            />
+            <button
+              type="button"
+              class="domain-remove"
+              onclick="removeServerDomain(${index})"
+              title="Remove domain"
+            >
+              x
+            </button>
+          </div>
+          <div id="serverDomainSuggestions-${index}">${renderServerDomainSuggestions(index)}</div>
         </div>
       `,
     )
     .join("");
+}
+
+function getSuggestedServerDomains(index) {
+  const currentValue = String(serverState.domains?.[index] || "").trim().toLowerCase();
+  const usedDomains = new Set(
+    (serverState.domains || [])
+      .map((domain, domainIndex) => (domainIndex === index ? "" : String(domain || "").trim().toLowerCase()))
+      .filter(Boolean),
+  );
+
+  return [...new Set(
+    serverConfigs
+      .flatMap((config) => Array.isArray(config.domains) ? config.domains : [])
+      .map((domain) => String(domain || "").trim())
+      .filter(Boolean),
+  )]
+    .filter((domain) => {
+      const normalized = domain.toLowerCase();
+      return normalized !== currentValue && !usedDomains.has(normalized);
+    })
+    .slice(0, 8);
+}
+
+function renderServerDomainSuggestions(index) {
+  if (activeServerDomainIndex !== index) {
+    return "";
+  }
+
+  const suggestions = getSuggestedServerDomains(index);
+  if (!suggestions.length) {
+    return "";
+  }
+
+  return `
+    <div class="path-suggestions">
+      ${suggestions
+        .map(
+          (domain) => `
+            <button
+              type="button"
+              class="suggestion-chip"
+              onmousedown="applyServerDomainSuggestion(${index}, '${escapeHtml(domain)}'); return false;"
+            >
+              ${escapeHtml(domain)}
+            </button>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
 }
 
 function addServerDomain() {
@@ -1799,6 +1947,7 @@ function addServerDomain() {
   }
 
   serverState.domains = [...(serverState.domains || []), ""];
+  activeServerDomainIndex = serverState.domains.length - 1;
   renderServerDomains();
   updateServerActions();
   saveWebviewState();
@@ -1810,6 +1959,7 @@ function updateServerDomain(index, value) {
   }
 
   serverState.domains[index] = value;
+  activeServerDomainIndex = index;
   updateServerActions();
   saveWebviewState();
 }
@@ -1823,9 +1973,55 @@ function removeServerDomain(index) {
   if (!serverState.domains.length) {
     serverState.domains = [""];
   }
+  activeServerDomainIndex = -1;
   renderServerDomains();
   updateServerActions();
   saveWebviewState();
+}
+
+function setActiveServerDomainIndex(index) {
+  if (activeServerDomainIndex === index) {
+    return;
+  }
+
+  activeServerDomainIndex = index;
+  updateServerDomainSuggestionVisibility();
+}
+
+function hideServerDomainSuggestionsOnBlur(index) {
+  setTimeout(() => {
+    if (activeServerDomainIndex !== index) {
+      return;
+    }
+
+    activeServerDomainIndex = -1;
+    updateServerDomainSuggestionVisibility();
+  }, 120);
+}
+
+function applyServerDomainSuggestion(index, value) {
+  if (!Array.isArray(serverState.domains)) {
+    serverState.domains = [];
+  }
+
+  serverState.domains[index] = value;
+  activeServerDomainIndex = -1;
+  renderServerDomains();
+  updateServerActions();
+  saveWebviewState();
+}
+
+function updateServerDomainSuggestionVisibility() {
+  const domains = serverState.domains?.length ? serverState.domains : [""];
+
+  domains.forEach((_, index) => {
+    const container = document.getElementById(`serverDomainSuggestions-${index}`);
+    if (!container) {
+      return;
+    }
+
+    container.innerHTML = renderServerDomainSuggestions(index);
+  });
 }
 
 function renderServerVariations() {
@@ -2125,7 +2321,7 @@ window.addEventListener("message", ({ data }) => {
       const session = getActiveSession();
       const next = data.data || {};
 
-      if (!isImageUploadActive() && !isServerActive()) {
+      if (!isImageUploadActive() && !isServerActive() && !isMcpActive()) {
         session.accountId = next.accountId || session.accountId || "";
         session.projectId = next.projectId ?? session.projectId ?? null;
         session.projectName = next.projectName || session.projectName || "";
@@ -2285,10 +2481,18 @@ window.addEventListener("message", ({ data }) => {
     }
 
     case "editorOpened": {
-      const session = sessions.find((item) => item.sessionId === data.sessionId);
+      const selectionMatch = sessions.find((item) =>
+        String(item.accountId || "") === String(data.accountId || item.accountId || "")
+        && String(item.projectId || "") === String(data.projectId || item.projectId || "")
+        && String(item.experienceId || "") === String(data.experienceId || item.experienceId || "")
+        && String(item.variationId || "") === String(data.variationId || item.variationId || ""),
+      );
+      const session = sessions.find((item) => item.sessionId === data.sessionId)
+        || selectionMatch
+        || (!isImageUploadActive() && !isServerActive() && !isMcpActive() ? getActiveSession() : null);
 
       sessions.forEach((item) => {
-        if (item.sessionId !== data.sessionId) {
+        if (!session || item.sessionId !== session.sessionId) {
           item.editorFiles = { js: "", css: "" };
         }
       });
@@ -2304,7 +2508,15 @@ window.addEventListener("message", ({ data }) => {
     }
 
     case "editorClosed": {
-      const session = sessions.find((item) => item.sessionId === data.sessionId);
+      const selectionMatch = sessions.find((item) =>
+        String(item.accountId || "") === String(data.accountId || item.accountId || "")
+        && String(item.projectId || "") === String(data.projectId || item.projectId || "")
+        && String(item.experienceId || "") === String(data.experienceId || item.experienceId || "")
+        && String(item.variationId || "") === String(data.variationId || item.variationId || ""),
+      );
+      const session = sessions.find((item) => item.sessionId === data.sessionId)
+        || selectionMatch
+        || (!isImageUploadActive() && !isServerActive() && !isMcpActive() ? getActiveSession() : null);
 
       if (session) {
         session.editorFiles = { js: "", css: "" };
@@ -2388,12 +2600,27 @@ window.addEventListener("message", ({ data }) => {
       setLoading(false);
       setEditorLoading(false);
       isHydratingRestore = false;
+      oauthLoginPending = false;
+      updateAuthUI();
       showToast(data.message || "Something went wrong", "error");
+      break;
+
+    case "oauthLoginStarted":
+      oauthLoginPending = true;
+      updateAuthUI();
+      showToast("Finish the Convert login in your browser, or cancel here.", "success");
+      break;
+
+    case "oauthLoginCancelled":
+      oauthLoginPending = false;
+      updateAuthUI();
+      showToast("Login cancelled", "success");
       break;
 
     case "oauthSuccess":
       authMode = "oauth";
       accounts = data.accounts || [];
+      oauthLoginPending = false;
       updateAuthUI();
 
       if (accounts.length === 1) {
@@ -2407,6 +2634,7 @@ window.addEventListener("message", ({ data }) => {
 
     case "clientIdSaved":
       clientId = data.clientId || "";
+      oauthLoginPending = false;
       if (authMode === "oauth") {
         authMode = "apikey";
         accounts = [];
@@ -2429,6 +2657,7 @@ window.addEventListener("message", ({ data }) => {
     case "oauthLogout":
       authMode = "apikey";
       accounts = [];
+      oauthLoginPending = false;
       getActiveProjectContext().accountId = "";
       set("accountId", "");
       clearDropdowns("accounts", "projects", "experiences", "variations");
@@ -2556,6 +2785,7 @@ window.addEventListener("message", ({ data }) => {
       {
         const preservedServerPath = serverState.serverPath || getServerInput("serverPath");
         serverState = createDefaultServerConfig();
+        activeServerDomainIndex = -1;
         serverState.serverPath = preservedServerPath || "";
       }
       selectedServerConfigId = "";
@@ -2572,6 +2802,7 @@ window.addEventListener("message", ({ data }) => {
       {
         const preservedServerPath = serverState.serverPath || getServerInput("serverPath");
         serverState = createDefaultServerConfig();
+        activeServerDomainIndex = -1;
         serverState.serverPath = preservedServerPath || "";
       }
       selectedServerConfigId = "";
@@ -2885,6 +3116,9 @@ window.removeServerVariation = removeServerVariation;
 window.addServerDomain = addServerDomain;
 window.updateServerDomain = updateServerDomain;
 window.removeServerDomain = removeServerDomain;
+window.setActiveServerDomainIndex = setActiveServerDomainIndex;
+window.hideServerDomainSuggestionsOnBlur = hideServerDomainSuggestionsOnBlur;
+window.applyServerDomainSuggestion = applyServerDomainSuggestion;
 window.saveServerConfig = saveServerConfig;
 window.previewServerConfig = previewServerConfig;
 window.runServer = runServer;

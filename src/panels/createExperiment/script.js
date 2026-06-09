@@ -5,6 +5,7 @@ const steps = [
   "Location",
   "Audience",
   "Goals",
+  "Variations",
   "Review",
   "Success",
 ];
@@ -18,6 +19,11 @@ const LOCATION_URL_OPERATORS = [
 ];
 
 const LOCATION_JS_OPERATORS = [{ value: "equals", label: "Returns true" }];
+const SEARCH_COMMANDS = {
+  locations: "requestLocations",
+  audiences: "requestAudiences",
+  goals: "requestGoals",
+};
 
 let currentStep = 0;
 let loading = false;
@@ -49,6 +55,8 @@ function getFocusableSnapshot() {
     "data-new-location-field",
     "data-new-goal-id",
     "data-new-goal-field",
+    "data-new-variation-id",
+    "data-new-variation-field",
   ];
   const selectorParts = [];
 
@@ -110,7 +118,20 @@ function createInitialState() {
     audiences: [],
     goals: [],
     newGoals: [],
+    variationNames: [createVariationDraft("Variation 1")],
   };
+}
+
+function stripUrlProtocol(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^\/+/, "");
+}
+
+function getNormalizedExperimentUrl(value = state.url) {
+  const stripped = stripUrlProtocol(value);
+  return stripped ? `https://${stripped}` : "";
 }
 
 function $(id) {
@@ -129,6 +150,13 @@ function createId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function createVariationDraft(name = "") {
+  return {
+    draftId: createId("variation"),
+    name,
+  };
+}
+
 function post(command, payload = {}) {
   vscode.postMessage({ command, ...payload });
 }
@@ -138,34 +166,44 @@ function isSuccessStep() {
 }
 
 function updateField(field, value) {
-  state[field] = value;
+  state[field] = field === "url" ? stripUrlProtocol(value) : value;
 }
 
 function setSearch(field, value) {
   if (field === "locations") {
     locationSearch = value;
+    return;
   }
+
   if (field === "audiences") {
     audienceSearch = value;
+    return;
   }
+
   if (field === "goals") {
     goalSearch = value;
   }
 }
 
-function requestSearch(field) {
-  const search = field === "locations"
-    ? locationSearch
-    : field === "audiences"
-      ? audienceSearch
-      : goalSearch;
-  const command = field === "locations"
-    ? "requestLocations"
-    : field === "audiences"
-      ? "requestAudiences"
-      : "requestGoals";
+function getSearchValue(field) {
+  if (field === "locations") {
+    return locationSearch;
+  }
 
-  post(command, { search: search.trim() });
+  if (field === "audiences") {
+    return audienceSearch;
+  }
+
+  return goalSearch;
+}
+
+function requestSearch(field) {
+  const command = SEARCH_COMMANDS[field];
+  if (!command) {
+    return;
+  }
+
+  post(command, { search: getSearchValue(field).trim() });
 }
 
 function toggleSelectedItem(collection, item) {
@@ -253,6 +291,73 @@ function removeNewGoal(draftId) {
   render();
 }
 
+function addVariationName() {
+  state.variationNames.push(createVariationDraft(""));
+  render();
+}
+
+function updateVariationName(draftId, value) {
+  const draft = state.variationNames.find((item) => item.draftId === draftId);
+  if (!draft) {
+    return;
+  }
+
+  draft.name = value;
+}
+
+function removeVariationName(draftId) {
+  const draftIndex = state.variationNames.findIndex((item) => item.draftId === draftId);
+  if (draftIndex <= 0) {
+    return;
+  }
+
+  state.variationNames = state.variationNames.filter((item) => item.draftId !== draftId);
+  render();
+}
+
+function getTrimmedVariationNames() {
+  return state.variationNames
+    .map((item) => item.name.trim())
+    .filter(Boolean);
+}
+
+function validateVariationNames() {
+  const errors = [];
+  const normalizedVariationNames = getTrimmedVariationNames();
+  const seenVariationNames = new Set();
+
+  state.variationNames.forEach((item, index) => {
+    if (!item.name.trim()) {
+      errors.push(
+        index === 0
+          ? "Variation 1 needs a name."
+          : "Every added variation needs a name.",
+      );
+    }
+  });
+
+  normalizedVariationNames.forEach((name) => {
+    const key = name.toLowerCase();
+    if (key === "original") {
+      errors.push("Do not add \"Original\" as a variation name; Convert creates it automatically.");
+      return;
+    }
+
+    if (seenVariationNames.has(key)) {
+      errors.push(`Variation name "${name}" is duplicated.`);
+      return;
+    }
+
+    seenVariationNames.add(key);
+  });
+
+  return errors;
+}
+
+function getPlannedVariationNames() {
+  return ["Original", ...getTrimmedVariationNames()];
+}
+
 function isAbsoluteUrl(value) {
   try {
     const url = new URL(value);
@@ -273,9 +378,10 @@ function validateStep(step = currentStep) {
     if (!state.name.trim()) {
       errors.push("Experiment name is required.");
     }
-    if (!state.url.trim()) {
+    const normalizedUrl = getNormalizedExperimentUrl();
+    if (!normalizedUrl) {
       errors.push("Experiment URL is required.");
-    } else if (!isAbsoluteUrl(state.url.trim())) {
+    } else if (!isAbsoluteUrl(normalizedUrl)) {
       errors.push("Experiment URL must be a valid absolute URL.");
     }
   }
@@ -312,7 +418,18 @@ function validateStep(step = currentStep) {
     }
   }
 
+  if (step >= 4) {
+    errors.push(...validateVariationNames());
+  }
+
   return errors;
+}
+
+function clearErrorsOnEdit() {
+  const box = $("errorBox");
+  if (!box.classList.contains("hidden")) {
+    showErrors([]);
+  }
 }
 
 function showErrors(errors) {
@@ -366,7 +483,7 @@ function backStep() {
 function buildSubmissionState() {
   return {
     name: state.name.trim(),
-    url: state.url.trim(),
+    url: getNormalizedExperimentUrl(),
     description: state.description.trim(),
     selectedLocations: state.selectedLocations.map((item) => ({
       id: item.id,
@@ -393,6 +510,9 @@ function buildSubmissionState() {
       name: item.name.trim(),
       description: item.description.trim(),
     })),
+    variationNames: state.variationNames
+      .map((item) => item.name.trim())
+      .filter(Boolean),
   };
 }
 
@@ -461,11 +581,16 @@ function renderBasicInfo() {
       </label>
       <label>
         Experiment URL
-        <input
-          data-field="url"
-          value="${escapeHtml(state.url)}"
-          placeholder="https://example.com/pricing"
-        >
+        <div class="url-field">
+          <span class="url-prefix">https://</span>
+          <input
+            data-field="url"
+            value="${escapeHtml(state.url)}"
+            placeholder="example.com/pricing"
+            spellcheck="false"
+            autocomplete="off"
+          >
+        </div>
       </label>
       <label>
         Description or hypothesis
@@ -539,10 +664,12 @@ function renderSelectableList(collection, items, emptyText) {
                 <label class="option-check">
                   <input
                     type="checkbox"
+                    class="option-check-input"
                     ${selected ? "checked" : ""}
                     data-picker="${collection}"
                     data-id="${escapeHtml(item.id)}"
                   >
+                  <span class="option-check-indicator" aria-hidden="true"></span>
                   <span class="option-check-copy">
                     <strong>${escapeHtml(item.name)}</strong>
                     <small>${escapeHtml(item.type || `ID ${item.id}`)}</small>
@@ -621,20 +748,6 @@ function renderNewLocationForm(location) {
           </select>
         </label>
         <label>
-          Rule type
-          <select data-new-location-id="${location.draftId}" data-new-location-field="type">
-            ${
-              location.source === "javascript"
-                ? `<option value="js_condition" selected>JS condition</option>`
-                : `
-                  <option value="url" ${location.type === "url" ? "selected" : ""}>Full URL</option>
-                  <option value="domain" ${location.type === "domain" ? "selected" : ""}>Domain</option>
-                  <option value="path" ${location.type === "path" ? "selected" : ""}>Path</option>
-                `
-            }
-          </select>
-        </label>
-        <label>
           Match option
           <select data-new-location-id="${location.draftId}" data-new-location-field="operator">
             ${operators
@@ -657,11 +770,7 @@ function renderNewLocationForm(location) {
             placeholder="${
               location.source === "javascript"
                 ? "window.location.pathname === '/pricing'"
-                : location.type === "domain"
-                  ? "example.com"
-                  : location.type === "path"
-                    ? "/pricing"
-                    : "https://example.com/pricing"
+                : "https://example.com/pricing"
             }"
           >${escapeHtml(location.value)}</textarea>
         </label>
@@ -802,6 +911,69 @@ function renderGoals() {
   `;
 }
 
+function renderVariationNameForm(variation, index) {
+  const isPrimaryVariation = index === 0;
+  const variationLabel = `Variation ${index + 1}`;
+  return `
+    <div class="asset-card">
+      <div class="asset-card-header">
+        <strong>${escapeHtml(variationLabel)}</strong>
+        ${isPrimaryVariation
+          ? `<span class="option-detail-empty">Required</span>`
+          : `<button type="button" class="icon-button" data-action="remove-new-variation" data-id="${variation.draftId}">
+              Remove
+            </button>`}
+      </div>
+      <div class="form-grid dense-grid">
+        <label>
+          Variation name
+          <input
+            data-new-variation-id="${variation.draftId}"
+            data-new-variation-field="name"
+            value="${escapeHtml(variation.name)}"
+            placeholder="${escapeHtml(variationLabel)}"
+          >
+        </label>
+      </div>
+    </div>
+  `;
+}
+
+function renderVariations() {
+  const plannedNames = getPlannedVariationNames();
+  return `
+    ${renderSectionIntro(
+      "Variations",
+      "Original is always created automatically. Rename Variation 1 here, then add any extra variations you want after it.",
+    )}
+    <div class="section-stack">
+      <section class="content-section">
+        <div class="section-heading">
+          <div>
+            <h3>Variation lineup</h3>
+            <p>Variation 1 is included by default. Add more rows to create Variation 2, Variation 3, and beyond.</p>
+          </div>
+          <button type="button" class="secondary small" data-action="add-new-variation">Add variation</button>
+        </div>
+        <div class="asset-stack">${state.variationNames.map(renderVariationNameForm).join("")}</div>
+      </section>
+
+      <section class="content-section subsection">
+        <div class="section-heading">
+          <div>
+            <h3>Experiment will create</h3>
+            <p>Traffic is split evenly across the final list during creation.</p>
+          </div>
+        </div>
+        ${renderSelectedChips(
+          plannedNames.map((name) => ({ name })),
+          "No variations planned.",
+        )}
+      </section>
+    </div>
+  `;
+}
+
 function renderReviewRow(label, value) {
   return `
     <div>
@@ -820,7 +992,7 @@ function renderReview() {
     <div class="review-grid">
       ${renderReviewRow("Name", state.name)}
       ${renderReviewRow("Project", project.projectName || project.projectId)}
-      ${renderReviewRow("Experiment URL", state.url)}
+      ${renderReviewRow("Experiment URL", getNormalizedExperimentUrl())}
       ${renderReviewRow("Description", state.description || "None")}
       ${renderReviewRow(
         "Locations",
@@ -839,6 +1011,10 @@ function renderReview() {
           ...state.goals.map((item) => item.name),
           ...state.newGoals.map((item) => `${item.name} (code_trigger)`),
         ].join(", "),
+      )}
+      ${renderReviewRow(
+        "Variations",
+        getPlannedVariationNames().join(", "),
       )}
     </div>
   `;
@@ -859,7 +1035,7 @@ function renderSuccess() {
       </div>
       <div class="review-grid success-grid">
         ${renderReviewRow("Project", project.projectName || project.projectId)}
-        ${renderReviewRow("Experiment URL", experiment.url || state.url)}
+        ${renderReviewRow("Experiment URL", experiment.url || getNormalizedExperimentUrl())}
         ${renderReviewRow("Summary link", experiment.summaryLink || "Unavailable")}
       </div>
       <div class="inline-actions success-actions">
@@ -877,6 +1053,7 @@ function renderContent() {
     renderLocations,
     renderAudience,
     renderGoals,
+    renderVariations,
     renderReview,
     renderSuccess,
   ];
@@ -966,6 +1143,7 @@ function handleContentInput(event) {
     const field = target.dataset.field;
     if (field) {
       updateField(field, target.value);
+      clearErrorsOnEdit();
       return;
     }
 
@@ -979,6 +1157,7 @@ function handleContentInput(event) {
     const newLocationField = target.dataset.newLocationField;
     if (newLocationId && newLocationField) {
       updateNewLocation(newLocationId, newLocationField, target.value);
+      clearErrorsOnEdit();
       return;
     }
 
@@ -986,6 +1165,15 @@ function handleContentInput(event) {
     const newGoalField = target.dataset.newGoalField;
     if (newGoalId && newGoalField) {
       updateNewGoal(newGoalId, newGoalField, target.value);
+      clearErrorsOnEdit();
+      return;
+    }
+
+    const newVariationId = target.dataset.newVariationId;
+    const newVariationField = target.dataset.newVariationField;
+    if (newVariationId && newVariationField === "name") {
+      updateVariationName(newVariationId, target.value);
+      clearErrorsOnEdit();
     }
   }
 }
@@ -1001,6 +1189,7 @@ function handleContentChange(event) {
     const newLocationField = target.dataset.newLocationField;
     if (newLocationId && newLocationField) {
       updateNewLocation(newLocationId, newLocationField, target.value);
+      clearErrorsOnEdit();
       return;
     }
   }
@@ -1016,6 +1205,7 @@ function handleContentChange(event) {
     const item = source.find((entry) => String(entry.id) === String(id));
     if ((picker === "selectedLocations" || picker === "audiences" || picker === "goals") && item) {
       toggleSelectedItem(picker, item);
+      clearErrorsOnEdit();
     }
   }
 }
@@ -1070,6 +1260,12 @@ function handleDocumentClick(event) {
       break;
     case "remove-new-goal":
       removeNewGoal(id);
+      break;
+    case "add-new-variation":
+      addVariationName();
+      break;
+    case "remove-new-variation":
+      removeVariationName(id);
       break;
     case "open-link":
       post("openExternal", { href: actionElement.dataset.href || "" });

@@ -9,6 +9,20 @@ const SECRET_TOKEN_STORAGE_KEY = "convert.accessToken";
 const SECRET_ACCOUNTS_STORAGE_KEY = "convert.accounts";
 const SECRET_CLIENT_ID_STORAGE_KEY = "convert.clientId";
 
+class AuthenticationCancelledError extends Error {
+  constructor() {
+    super("Authentication cancelled");
+    this.name = "AuthenticationCancelledError";
+  }
+}
+
+interface PendingAuthentication {
+  promise: Promise<TokenResponse>;
+  cancel: () => void;
+}
+
+let pendingAuthentication: PendingAuthentication | undefined;
+
 export interface ConvertAccount {
   account_id: number | string;
   name: string;
@@ -85,9 +99,30 @@ export async function clearClientId(context: vscode.ExtensionContext) {
   await context.secrets.delete(SECRET_CLIENT_ID_STORAGE_KEY);
 }
 
+export function isAuthenticationInProgress(): boolean {
+  return Boolean(pendingAuthentication);
+}
+
+export function cancelAuthentication(): boolean {
+  if (!pendingAuthentication) {
+    return false;
+  }
+
+  pendingAuthentication.cancel();
+  return true;
+}
+
+export function isAuthenticationCancelledError(error: unknown): boolean {
+  return error instanceof AuthenticationCancelledError;
+}
+
 export async function authenticate(
   context: vscode.ExtensionContext,
 ): Promise<TokenResponse> {
+  if (pendingAuthentication) {
+    return pendingAuthentication.promise;
+  }
+
   const clientId = await getClientId(context);
 
   if (!clientId) {
@@ -110,38 +145,89 @@ export async function authenticate(
       `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`,
   );
 
-  const token = await new Promise<TokenResponse>((resolve, reject) => {
-    const disposable = vscode.window.registerUriHandler({
-      handleUri(uri: vscode.Uri): void {
-        disposable.dispose();
+  let cancelPendingAuthentication = () => {};
+  const tokenPromise = new Promise<TokenResponse>((resolve, reject) => {
+    let settled = false;
+    let disposable: vscode.Disposable | undefined;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
+    const cleanup = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      disposable?.dispose();
+      pendingAuthentication = undefined;
+    };
+
+    const resolveAuthentication = (token: TokenResponse) => {
+      cleanup();
+      resolve(token);
+    };
+
+    const rejectAuthentication = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    cancelPendingAuthentication = () => {
+      rejectAuthentication(new AuthenticationCancelledError());
+    };
+
+    disposable = vscode.window.registerUriHandler({
+      handleUri(uri: vscode.Uri): void {
         const params = new URLSearchParams(uri.query);
         const code = params.get("code");
         const returnedState = params.get("state");
 
         if (!code) {
-          reject(new Error("No authorization code received"));
+          rejectAuthentication(new Error("No authorization code received"));
           return;
         }
 
         if (returnedState !== rawState) {
-          reject(new Error("State mismatch - possible CSRF attack"));
+          rejectAuthentication(new Error("State mismatch - possible CSRF attack"));
           return;
         }
 
         exchangeCodeForToken(code, verifier, clientId)
-          .then(resolve)
-          .catch(reject);
+          .then((token) => resolveAuthentication(token))
+          .catch((error: unknown) => {
+            const authError = error instanceof Error ? error : new Error(String(error));
+            rejectAuthentication(authError);
+          });
       },
     });
 
-    vscode.env.openExternal(authUri);
+    void vscode.env.openExternal(authUri).then(
+      (opened) => {
+        if (opened === false) {
+          rejectAuthentication(
+            new Error("Unable to open the Convert login page in your browser."),
+          );
+        }
+      },
+      (error: unknown) => {
+        const authError = error instanceof Error ? error : new Error(String(error));
+        rejectAuthentication(authError);
+      },
+    );
 
-    setTimeout(() => {
-      disposable.dispose();
-      reject(new Error("Authentication timed out"));
+    timeoutHandle = setTimeout(() => {
+      rejectAuthentication(new Error("Authentication timed out"));
     }, 5 * 60 * 1000);
   });
+
+  pendingAuthentication = {
+    promise: tokenPromise,
+    cancel: () => cancelPendingAuthentication(),
+  };
+
+  const token = await tokenPromise;
 
   await storeToken(context, token.access_token);
   await context.secrets.store(

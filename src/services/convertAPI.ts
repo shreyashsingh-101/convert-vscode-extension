@@ -6,13 +6,18 @@ async function request(
   method: string = "POST",
   body?: object,
 ) {
+  const normalizedMethod = method.toUpperCase();
+  const requestBody = normalizedMethod === "GET" || normalizedMethod === "HEAD"
+    ? undefined
+    : body ? JSON.stringify(body) : undefined;
+
   const res = await fetch(url, {
-    method,
+    method: normalizedMethod,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: requestBody,
   });
 
   const text = await res.text();
@@ -108,6 +113,19 @@ export interface CreateGoalPayload {
 }
 
 export const convertApi = {
+  requestEndpoint: (
+    apiKey: string,
+    path: string,
+    method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
+    body?: object,
+  ) =>
+    request(
+      `${BASE_URL}${path.startsWith("/") ? path : `/${path}`}`,
+      apiKey,
+      method,
+      body,
+    ),
+
   getProject: (apiKey: string, accountId: string, projectId: string) =>
     request(
       `${BASE_URL}/accounts/${accountId}/projects/${projectId}`,

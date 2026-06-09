@@ -24,6 +24,12 @@ export interface MpcServerStatusState {
   endpoint?: string;
   healthUrl?: string;
   lastError?: string;
+  healthStatus?: "checking" | "healthy" | "degraded" | "offline";
+  transportOk?: boolean;
+  toolsOk?: boolean;
+  sessionToolOk?: boolean;
+  lastCheckError?: string;
+  lastCheckedAt?: number;
   configText?: string;
   updatedAt?: number;
 }

@@ -627,6 +627,12 @@ button:active {
   align-items: center;
 }
 
+.domain-row-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .domain-remove {
   width: auto;
   margin: 0;

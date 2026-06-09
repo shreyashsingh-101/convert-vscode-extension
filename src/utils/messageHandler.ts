@@ -3,10 +3,12 @@ import * as path from "path";
 import { randomBytes } from "crypto";
 import {
   authenticate,
+  cancelAuthentication,
   clearClientId,
   clearToken,
   getClientId as readClientId,
   getStoredAccounts,
+  isAuthenticationCancelledError,
   getToken,
   storeClientId,
 } from "../auth/convertAuth";
@@ -163,8 +165,8 @@ function asServerConfig(value: unknown): ServerConfig {
     domains: asStringArray(record.domains)
       .map((domain) => domain.trim())
       .filter(Boolean),
-    clubJsCss: asBoolean(record.clubJsCss, true),
-    minimize: asBoolean(record.minimize, false),
+    clubJsCss: asBoolean(record.clubJsCss, false),
+    minimize: asBoolean(record.minimize, true),
     variations,
   };
 }
@@ -1347,6 +1349,12 @@ function normalizeCreateExperimentPayload(value: unknown): {
   const audiences = Array.isArray(record.audiences) ? record.audiences : [];
   const goals = Array.isArray(record.goals) ? record.goals : [];
   const newGoals = Array.isArray(record.newGoals) ? record.newGoals : [];
+  const variationNames = Array.isArray(record.variationNames)
+    ? record.variationNames
+    : [];
+  const additionalVariationNames = Array.isArray(record.additionalVariationNames)
+    ? record.additionalVariationNames
+    : [];
   const errors: string[] = [];
 
   if (!name) {
@@ -1443,9 +1451,34 @@ function normalizeCreateExperimentPayload(value: unknown): {
     }
   });
 
+  const normalizedVariationNames = [
+    ...variationNames,
+    ...additionalVariationNames,
+  ]
+    .map((item) => asString(item).trim())
+    .filter(Boolean);
+
+  const seenVariationNames = new Set<string>();
+  normalizedVariationNames.forEach((name) => {
+    const key = name.toLowerCase();
+    if (key === "original") {
+      errors.push("Do not include \"Original\" in variationNames; it is created automatically.");
+      return;
+    }
+
+    if (seenVariationNames.has(key)) {
+      errors.push(`Variation name "${name}" is duplicated.`);
+      return;
+    }
+
+    seenVariationNames.add(key);
+  });
+
   if (errors.length) {
     return { errors };
   }
+
+  const variations = buildExperimentVariations(normalizedVariationNames);
 
   const payload: CreateExperimentPayload = {
     name,
@@ -1460,18 +1493,7 @@ function normalizeCreateExperimentPayload(value: unknown): {
       .map((location) => location.id)
       .filter((id): id is number => id !== undefined),
     primary_goal: goalIds[0],
-    variations: [
-      {
-        name: "Original",
-        is_baseline: true,
-        traffic_distribution: 50,
-      },
-      {
-        name: "Variation 1",
-        is_baseline: false,
-        traffic_distribution: 50,
-      },
-    ],
+    variations,
     settings: {
       matching_options: {
         audiences: "any",
@@ -1488,6 +1510,33 @@ function normalizeCreateExperimentPayload(value: unknown): {
       newGoals: normalizedNewGoals,
     },
   };
+}
+
+function buildTrafficDistributionBuckets(count: number): number[] {
+  if (count <= 0) {
+    return [];
+  }
+
+  const baseBucket = Number((100 / count).toFixed(4));
+  const buckets = new Array<number>(count).fill(baseBucket);
+  const allocated = Number((baseBucket * (count - 1)).toFixed(4));
+  buckets[count - 1] = Number((100 - allocated).toFixed(4));
+  return buckets;
+}
+
+function buildExperimentVariations(
+  additionalVariationNames: string[],
+): NonNullable<CreateExperimentPayload["variations"]> {
+  const names = additionalVariationNames.length
+    ? ["Original", ...additionalVariationNames]
+    : ["Original", "Variation 1"];
+  const buckets = buildTrafficDistributionBuckets(names.length);
+
+  return names.map((name, index) => ({
+    name,
+    is_baseline: index === 0,
+    traffic_distribution: buckets[index],
+  }));
 }
 
 function toLocationRuleElement(location: {
@@ -1833,6 +1882,15 @@ export async function handleMessage(
         break;
       }
 
+      case "checkMcpHealth": {
+        await vscode.commands.executeCommand("convert.checkMcpHealth");
+        await webview.postMessage({
+          command: "success",
+          message: "MCP status refreshed.",
+        });
+        break;
+      }
+
       case "showMcpLogs": {
         await vscode.commands.executeCommand("convert.showMcpLogs");
         break;
@@ -1867,8 +1925,11 @@ export async function handleMessage(
           apiKey: asString(data.apiKey) || null,
           accountId: asString(data.accountId),
           projectId: asString(data.projectId) || null,
+          projectName: asString(data.projectName),
           experienceId: asString(data.experienceId) || null,
+          experienceName: asString(data.experienceName),
           variationId: asString(data.variationId) || null,
+          variationName: asString(data.variationName),
           authMode: oauthToken
             ? "oauth"
             : asString(data.authMode) === "oauth"
@@ -1888,16 +1949,36 @@ export async function handleMessage(
           throw new Error("Extension context unavailable");
         }
 
-        const tokenResponse = await authenticate(context);
-        const accounts = tokenResponse.scope?.accounts ?? [];
-
         await webview.postMessage({
-          command: "oauthSuccess",
-          accounts: accounts.map((account) => ({
-            id: String(account.account_id),
-            name: account.name,
-          })),
+          command: "oauthLoginStarted",
         });
+
+        try {
+          const tokenResponse = await authenticate(context);
+          const accounts = tokenResponse.scope?.accounts ?? [];
+
+          await webview.postMessage({
+            command: "oauthSuccess",
+            accounts: accounts.map((account) => ({
+              id: String(account.account_id),
+              name: account.name,
+            })),
+          });
+        } catch (error: unknown) {
+          if (isAuthenticationCancelledError(error)) {
+            await webview.postMessage({
+              command: "oauthLoginCancelled",
+            });
+            break;
+          }
+
+          throw error;
+        }
+        break;
+      }
+
+      case "oauthCancelLogin": {
+        cancelAuthentication();
         break;
       }
 
@@ -1906,6 +1987,7 @@ export async function handleMessage(
           throw new Error("Extension context unavailable");
         }
 
+        cancelAuthentication();
         await clearToken(context);
         const saved =
           context.globalState.get<Record<string, unknown>>("convertConfig") ??
@@ -2364,11 +2446,16 @@ export async function handleMessage(
 
       case "closeEditor": {
         const sessionId = sanitizeSessionId(asString(message.sessionId));
+        const session = editorSessions.get(sessionId);
 
         await closeEditorSessionFiles(sessionId);
         await webview.postMessage({
           command: "editorClosed",
           sessionId,
+          accountId: session?.accountId,
+          projectId: session?.projectId,
+          experienceId: session?.experienceId,
+          variationId: session?.variationId,
         });
         break;
       }
@@ -2449,6 +2536,10 @@ export async function handleMessage(
         await webview.postMessage({
           command: "editorOpened",
           sessionId,
+          accountId,
+          projectId,
+          experienceId,
+          variationId,
           files: {
             js: jsUri.fsPath,
             css: cssUri.fsPath,

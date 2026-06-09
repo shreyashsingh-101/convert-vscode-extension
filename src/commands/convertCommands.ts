@@ -2,6 +2,10 @@ import * as vscode from "vscode";
 import { getToken } from "../auth/convertAuth";
 import { convertApi } from "../services/convertAPI";
 import {
+  getConvertApiDocsOverview,
+  searchConvertApiDocs,
+} from "../services/mcp/convertApiDocs";
+import {
   DispatchDependencies,
   dispatchCreateExperiment,
   dispatchMessage,
@@ -16,6 +20,7 @@ interface CommandDependencies extends DispatchDependencies {
   showMcpLogs: () => void;
   restartMcpServer: () => Promise<void>;
   getMcpConfigText: () => string;
+  checkMcpHealth: () => Promise<unknown>;
 }
 
 function asString(value: unknown): string {
@@ -30,6 +35,10 @@ function asStringArray(value: unknown): string[] {
 
 function asBoolean(value: unknown): boolean {
   return value === true;
+}
+
+function isHttpMethod(value: unknown): value is "GET" | "POST" | "PUT" | "DELETE" {
+  return ["GET", "POST", "PUT", "DELETE"].includes(asString(value).toUpperCase());
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -49,6 +58,12 @@ function asNumber(value: unknown): number | undefined {
   }
 
   return undefined;
+}
+
+function asObject(value: unknown): object | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as object)
+    : undefined;
 }
 
 function extractListItems(payload: unknown): unknown[] {
@@ -82,6 +97,30 @@ function normalizeExperimentUrl(url: string): string {
   return `https://${trimmed}`;
 }
 
+function collectUniqueNames(names: string[]): string[] {
+  const uniqueNames: string[] = [];
+  const seen = new Set<string>();
+
+  names.forEach((name) => {
+    const trimmed = name.trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    uniqueNames.push(trimmed);
+  });
+
+  return uniqueNames;
+}
+
+function collectTrimmedNames(names: string[]): string[] {
+  return names
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 async function enrichCreateExperimentArgs(
   dependencies: CommandDependencies,
   accountId: string,
@@ -98,10 +137,10 @@ async function enrichCreateExperimentArgs(
   );
 
   const audienceNames = new Set(
-    [
+    collectUniqueNames([
       ...asStringArray(state.audienceNames),
       asString(state.audienceName),
-    ].map((name) => name.trim()).filter(Boolean),
+    ]),
   );
 
   const audiences = Array.isArray(state.audiences) ? [...state.audiences] : [];
@@ -158,9 +197,26 @@ async function enrichCreateExperimentArgs(
     state.goals = goalIds;
   }
 
+  const variationNames = collectTrimmedNames([
+    ...asStringArray(state.variationNames),
+    ...asStringArray(state.additionalVariationNames),
+    ...asStringArray(state.variations).map((item) => {
+      if (typeof item === "string") {
+        return item;
+      }
+      const record = asRecord(item);
+      return asString(record?.name);
+    }),
+  ]);
+
+  if (variationNames.length) {
+    state.variationNames = variationNames;
+  }
+
   delete state.audienceNames;
   delete state.audienceName;
   delete state.selectAllGoals;
+  delete state.additionalVariationNames;
 
   return state;
 }
@@ -242,6 +298,39 @@ async function listProjects(
     status: "ok",
     accountId,
     data: response,
+  };
+}
+
+async function setActiveSelection(
+  dependencies: CommandDependencies,
+  args?: {
+    accountId?: string;
+    projectId?: string;
+    projectName?: string;
+    experienceId?: string;
+    experienceName?: string;
+    variationId?: string;
+    variationName?: string;
+    authMode?: "apikey" | "oauth";
+  },
+) {
+  const selection = await dependencies.sessionStore.refreshSelectionFromStorage();
+  const next = resolveSelection(selection, {
+    accountId: asString(args?.accountId) || selection.accountId || "",
+    projectId: asString(args?.projectId) || null,
+    projectName: asString(args?.projectName),
+    experienceId: asString(args?.experienceId) || null,
+    experienceName: asString(args?.experienceName),
+    variationId: asString(args?.variationId) || null,
+    variationName: asString(args?.variationName),
+    authMode: args?.authMode === "oauth" ? "oauth" : selection.authMode,
+  });
+
+  await dependencies.sessionStore.updateSelection(next);
+
+  return {
+    status: "ok",
+    selection: next,
   };
 }
 
@@ -426,6 +515,291 @@ async function getPreviewLink(
   return {
     status: "ok",
     previewLink,
+  };
+}
+
+async function getExperimentDetails(
+  dependencies: CommandDependencies,
+  args?: {
+    accountId?: string;
+    projectId?: string;
+    experienceId?: string;
+    apiKey?: string;
+  },
+) {
+  const selection = await dependencies.sessionStore.refreshSelectionFromStorage();
+  const resolved = resolveSelection(selection, args);
+
+  if (!resolved.accountId || !resolved.projectId || !resolved.experienceId) {
+    return needsInput(
+      "Choose account, project, and experiment before loading experiment details.",
+      ["accountId", "projectId", "experienceId"],
+    );
+  }
+
+  const token = await resolveCommandToken(
+    dependencies.context,
+    dependencies.sessionStore,
+    args?.apiKey,
+  );
+  const data = await convertApi.getExperienceDetails(
+    token,
+    resolved.accountId,
+    resolved.projectId,
+    resolved.experienceId,
+  );
+
+  return {
+    status: "ok",
+    accountId: resolved.accountId,
+    projectId: resolved.projectId,
+    experienceId: resolved.experienceId,
+    data,
+  };
+}
+
+async function listLocations(
+  dependencies: CommandDependencies,
+  args?: {
+    accountId?: string;
+    projectId?: string;
+    search?: string;
+    apiKey?: string;
+  },
+) {
+  const selection = await dependencies.sessionStore.refreshSelectionFromStorage();
+  const resolved = resolveSelection(selection, args);
+
+  if (!resolved.accountId || !resolved.projectId) {
+    return needsInput(
+      "Choose an account and project before listing locations.",
+      ["accountId", "projectId"],
+    );
+  }
+
+  const token = await resolveCommandToken(
+    dependencies.context,
+    dependencies.sessionStore,
+    args?.apiKey,
+  );
+  const data = await convertApi.getLocations(
+    token,
+    resolved.accountId,
+    resolved.projectId,
+    asString(args?.search),
+  );
+
+  return {
+    status: "ok",
+    accountId: resolved.accountId,
+    projectId: resolved.projectId,
+    data,
+  };
+}
+
+async function listAudiences(
+  dependencies: CommandDependencies,
+  args?: {
+    accountId?: string;
+    projectId?: string;
+    search?: string;
+    apiKey?: string;
+  },
+) {
+  const selection = await dependencies.sessionStore.refreshSelectionFromStorage();
+  const resolved = resolveSelection(selection, args);
+
+  if (!resolved.accountId || !resolved.projectId) {
+    return needsInput(
+      "Choose an account and project before listing audiences.",
+      ["accountId", "projectId"],
+    );
+  }
+
+  const token = await resolveCommandToken(
+    dependencies.context,
+    dependencies.sessionStore,
+    args?.apiKey,
+  );
+  const data = await convertApi.getAudiences(
+    token,
+    resolved.accountId,
+    resolved.projectId,
+    asString(args?.search),
+  );
+
+  return {
+    status: "ok",
+    accountId: resolved.accountId,
+    projectId: resolved.projectId,
+    data,
+  };
+}
+
+async function listGoals(
+  dependencies: CommandDependencies,
+  args?: {
+    accountId?: string;
+    projectId?: string;
+    search?: string;
+    apiKey?: string;
+  },
+) {
+  const selection = await dependencies.sessionStore.refreshSelectionFromStorage();
+  const resolved = resolveSelection(selection, args);
+
+  if (!resolved.accountId || !resolved.projectId) {
+    return needsInput(
+      "Choose an account and project before listing goals.",
+      ["accountId", "projectId"],
+    );
+  }
+
+  const token = await resolveCommandToken(
+    dependencies.context,
+    dependencies.sessionStore,
+    args?.apiKey,
+  );
+  const data = await convertApi.getGoals(
+    token,
+    resolved.accountId,
+    resolved.projectId,
+    asString(args?.search),
+  );
+
+  return {
+    status: "ok",
+    accountId: resolved.accountId,
+    projectId: resolved.projectId,
+    data,
+  };
+}
+
+async function createLocation(
+  dependencies: CommandDependencies,
+  args?: Record<string, unknown>,
+) {
+  const selection = await dependencies.sessionStore.refreshSelectionFromStorage();
+  const accountId = asString(args?.accountId) || selection.accountId || "";
+  const projectId = asString(args?.projectId) || selection.projectId || "";
+  const payload = asObject(args?.payload ?? args?.location);
+
+  if (!accountId || !projectId) {
+    return needsInput(
+      "Choose an account and project before creating a location.",
+      ["accountId", "projectId"],
+    );
+  }
+
+  if (!payload) {
+    return needsInput(
+      "Provide a location payload before creating a location.",
+      ["payload"],
+    );
+  }
+
+  const token = await resolveCommandToken(
+    dependencies.context,
+    dependencies.sessionStore,
+    asString(args?.apiKey),
+  );
+  const data = await convertApi.createLocation(token, accountId, projectId, payload as any);
+
+  return {
+    status: "ok",
+    accountId,
+    projectId,
+    data,
+  };
+}
+
+async function createGoal(
+  dependencies: CommandDependencies,
+  args?: Record<string, unknown>,
+) {
+  const selection = await dependencies.sessionStore.refreshSelectionFromStorage();
+  const accountId = asString(args?.accountId) || selection.accountId || "";
+  const projectId = asString(args?.projectId) || selection.projectId || "";
+  const payload = asObject(args?.payload ?? args?.goal);
+
+  if (!accountId || !projectId) {
+    return needsInput(
+      "Choose an account and project before creating a goal.",
+      ["accountId", "projectId"],
+    );
+  }
+
+  if (!payload) {
+    return needsInput(
+      "Provide a goal payload before creating a goal.",
+      ["payload"],
+    );
+  }
+
+  const token = await resolveCommandToken(
+    dependencies.context,
+    dependencies.sessionStore,
+    asString(args?.apiKey),
+  );
+  const data = await convertApi.createGoal(token, accountId, projectId, payload as any);
+
+  return {
+    status: "ok",
+    accountId,
+    projectId,
+    data,
+  };
+}
+
+function getApiDocsOverview() {
+  return {
+    status: "ok",
+    ...getConvertApiDocsOverview(),
+  };
+}
+
+function searchApiDocs(args?: Record<string, unknown>) {
+  return {
+    status: "ok",
+    ...searchConvertApiDocs(asString(args?.query)),
+  };
+}
+
+async function callConvertApi(
+  dependencies: CommandDependencies,
+  args?: Record<string, unknown>,
+) {
+  const methodCandidate = asString(args?.method).toUpperCase();
+  const method = isHttpMethod(methodCandidate) ? methodCandidate : "GET";
+  const path = asString(args?.path).trim();
+
+  if (!path) {
+    return needsInput("Provide a Convert API path to call.", ["path"]);
+  }
+
+  if (!path.startsWith("/accounts/")) {
+    throw new Error("Only Convert API v2 account-scoped paths are allowed.");
+  }
+
+  const token = await resolveCommandToken(
+    dependencies.context,
+    dependencies.sessionStore,
+    asString(args?.apiKey),
+  );
+  const requestBody = asObject(args?.body) ?? asObject(args?.payload);
+
+  const data = await convertApi.requestEndpoint(
+    token,
+    path,
+    method,
+    requestBody,
+  );
+
+  return {
+    status: "ok",
+    method,
+    path,
+    data,
   };
 }
 
@@ -804,10 +1178,17 @@ export function registerConvertCommands(
   const registrations: Array<[string, (...args: any[]) => any]> = [
     ["convert.getActiveSession", () => dependencies.sessionStore.getSelection()],
     ["convert.getCurrentSelection", () => dependencies.sessionStore.getSelection()],
+    ["convert.setActiveSelection", (args?: Record<string, unknown>) => setActiveSelection(dependencies, args)],
     ["convert.listProjects", (args?: Record<string, unknown>) => listProjects(dependencies, args)],
     ["convert.listExperiments", (args?: Record<string, unknown>) => listExperiments(dependencies, args)],
+    ["convert.listLocations", (args?: Record<string, unknown>) => listLocations(dependencies, args)],
+    ["convert.listAudiences", (args?: Record<string, unknown>) => listAudiences(dependencies, args)],
+    ["convert.listGoals", (args?: Record<string, unknown>) => listGoals(dependencies, args)],
     ["convert.listVariations", (args?: Record<string, unknown>) => listVariations(dependencies, args)],
+    ["convert.getExperimentDetails", (args?: Record<string, unknown>) => getExperimentDetails(dependencies, args)],
     ["convert.createExperiment", (args?: Record<string, unknown>) => createExperiment(dependencies, args)],
+    ["convert.createLocation", (args?: Record<string, unknown>) => createLocation(dependencies, args)],
+    ["convert.createGoal", (args?: Record<string, unknown>) => createGoal(dependencies, args)],
     ["convert.pushCurrentVariation", (args?: Record<string, unknown>) => pushCurrentVariation(dependencies, args)],
     ["convert.pushGlobalCode", (args?: Record<string, unknown>) => pushGlobalCode(dependencies, args)],
     ["convert.uploadImages", (args?: Record<string, unknown>) => uploadImages(dependencies, args)],
@@ -817,7 +1198,11 @@ export function registerConvertCommands(
     ["convert.runPreviewServer", (args?: Record<string, unknown>) => startLocalServer(dependencies, args)],
     ["convert.copyPreviewLink", (args?: Record<string, unknown>) => getPreviewLink(dependencies, { ...args, copy: true })],
     ["convert.getPreviewLink", (args?: Record<string, unknown>) => getPreviewLink(dependencies, args)],
+    ["convert.getConvertApiOverview", () => getApiDocsOverview()],
+    ["convert.searchConvertApiDocs", (args?: Record<string, unknown>) => searchApiDocs(args)],
+    ["convert.callConvertApi", (args?: Record<string, unknown>) => callConvertApi(dependencies, args)],
     ["convert.getMcpConfig", () => dependencies.getMcpConfigText()],
+    ["convert.checkMcpHealth", () => dependencies.checkMcpHealth()],
     ["convert.restartMcpServer", () => dependencies.restartMcpServer()],
     ["convert.showMcpLogs", () => dependencies.showMcpLogs()],
   ];

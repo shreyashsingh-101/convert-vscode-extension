@@ -306,6 +306,7 @@ export function activate(context: vscode.ExtensionContext) {
       fileStore: store,
       sessionStore,
       getMcpConfigText: () => mcpServer.getConfigText(),
+      checkMcpHealth: () => mcpServer.checkHealth(),
       restartMcpServer: () => mcpServer.restart(),
       showMcpLogs: () => mcpServer.showLogs(),
     }),

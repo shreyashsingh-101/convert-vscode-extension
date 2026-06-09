@@ -2,7 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.0.7] - Latest
+## [0.0.8] - Latest
+
+### Added
+
+- Added a guided **Create Experiment** wizard for building experiments from the sidebar with support for locations, audiences, goals, variations, and review.
+- Added an **AI / MCP** tab for inspecting the embedded MCP server, checking health, copying config, and opening server logs.
+- Added embedded MCP support for richer protocol flows including prompts listing, resources listing, resource template listing, and better tool discovery compatibility.
+- Added cancellable OAuth login so a pending browser sign-in can be stopped directly from the sidebar.
+- Added reusable domain suggestion pills in the **Server** tab based on previously saved configs.
+
+### Improved
+
+- Improved experiment creation so `Variation 1` is always explicit and renameable while additional variations append clearly after it.
+- Improved create-wizard validation, review output, and variation payload handling for multi-variation experiment setup.
+- Improved server config defaults for new setups by defaulting `clubJsCss` to `false` and `minimize` to `true`.
+- Improved generic Convert API MCP calls by accepting both `body` and `payload` inputs and by tolerating `payload` on `GET` / `HEAD` requests.
+- Improved MCP naming and config output so AI clients can register the server as `ABTest Extension`.
+- Improved sidebar persistence so selected project, experiment, and variation names are stored alongside ids.
+
+### Fixed
+
+- Fixed repeated OAuth login attempts causing protocol-handler conflicts while another login request was still pending.
+- Fixed missing or overly generic JSON-RPC error responses for malformed requests, unknown tools, and related MCP failure cases.
+- Fixed server domain input regressions and restored editable inputs while keeping suggestion support.
+- Fixed MCP and workflow tab visibility issues, including hiding the account-id field on the AI / MCP tab and removing workflow titles that did not apply there.
+- Fixed duplicate variation-name handling in experiment creation so conflicting names fail validation instead of being silently merged.
+
+## [0.0.7]
 
 ### Added
 
