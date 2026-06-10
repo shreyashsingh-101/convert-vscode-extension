@@ -2,7 +2,7 @@
 
 Convert VSCode Extension is a Visual Studio Code workflow for working with Convert experiments without leaving the editor. It supports direct JS/CSS pushes, image uploads, experiment creation, local AB Codeflame server config management, and an embedded MCP server that AI clients can use through the `ABTest Extension` endpoint.
 
-## What's New in v0.0.8
+## What's New in v0.0.9
 
 - Added a full **Create Experiment** wizard with guided steps for basic info, locations, audiences, goals, variations, and review.
 - Added a dedicated **AI / MCP** tab with embedded server status, health checks, logs, and copyable MCP config.

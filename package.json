@@ -2,10 +2,10 @@
   "name": "convert-vscode-extension",
   "displayName": "Convert VSCode Extension",
   "description": "Work with Convert experiments from VS Code with code upload, image upload, experiment creation, local server configs, and MCP tools",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "publisher": "ShreyashSingh101",
   "engines": {
-    "vscode": "^1.115.0"
+    "vscode": "^1.80.0"
   },
   "icon": "resources/icon.png",
   "categories": ["Other"],
@@ -66,7 +66,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.19.17",
-    "@types/vscode": "^1.115.0",
+    "@types/vscode": "^1.80.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.3",
